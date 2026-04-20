@@ -1,0 +1,26 @@
+{
+  "name": "label-release",
+  "version": "0.1.0",
+  "description": "Forgejo action that cuts a new release based on PR labels since the last release.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc && ncc build src/index.ts -o dist --source-map --minify",
+    "typecheck": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "smoke": "node --experimental-transform-types scripts/smoke.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@vercel/ncc": "^0.38.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.4"
+  },
+  "dependencies": {
+    "yaml": "^2.8.3"
+  }
+}

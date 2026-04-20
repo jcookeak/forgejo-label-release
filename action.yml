@@ -1,0 +1,65 @@
+name: "Label Release"
+description: "Cut a new Forgejo release, bumping semver based on labels of PRs merged since the last release."
+author: "Jonathon Cooke-Akaiwa"
+
+inputs:
+  token:
+    description: "Forgejo API token with repo write access. Defaults to $GITHUB_TOKEN / $FORGEJO_TOKEN."
+    required: false
+  server-url:
+    description: "Forgejo server base URL. Defaults to $GITHUB_SERVER_URL."
+    required: false
+  repository:
+    description: "owner/repo. Defaults to $GITHUB_REPOSITORY."
+    required: false
+  target-commitish:
+    description: "Commit SHA or branch for the new release. Defaults to $GITHUB_SHA."
+    required: false
+  major-labels:
+    description: "Comma or newline separated PR labels that trigger a major bump."
+    required: false
+    default: "breaking,major,semver:major"
+  minor-labels:
+    description: "Comma or newline separated PR labels that trigger a minor bump."
+    required: false
+    default: "feature,enhancement,minor,semver:minor"
+  patch-labels:
+    description: "Comma or newline separated PR labels that trigger a patch bump."
+    required: false
+    default: "bug,fix,patch,semver:patch"
+  tag-prefix:
+    description: "Prefix prepended to generated tags."
+    required: false
+    default: "v"
+  release-template:
+    description: "Path to a GitHub-style release.yml config for grouping notes."
+    required: false
+    default: ".forgejo/release.yml"
+  draft:
+    description: "Create the release as a draft."
+    required: false
+    default: "false"
+  prerelease:
+    description: "Mark the release as a prerelease."
+    required: false
+    default: "false"
+  dry-run:
+    description: "Compute the bump and notes but do not create a release."
+    required: false
+    default: "false"
+
+outputs:
+  released:
+    description: "true if a release was created, false if skipped."
+  tag:
+    description: "The tag that was (or would have been) created."
+  previous-tag:
+    description: "The previous release tag used as the baseline."
+  bump:
+    description: "major, minor, patch, or none."
+  notes:
+    description: "The rendered release notes."
+
+runs:
+  using: "node24"
+  main: "dist/index.js"
