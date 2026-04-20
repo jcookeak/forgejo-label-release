@@ -67,7 +67,10 @@ export function decideBump(allLabels: Iterable<string>, cfg: LabelConfig): BumpK
   return null;
 }
 
-export function pickLatest(tags: string[], prefix: string): { tag: string; version: SemVer } | null {
+export function pickLatest(
+  tags: string[],
+  prefix: string,
+): { tag: string; version: SemVer } | null {
   let best: { tag: string; version: SemVer } | null = null;
   for (const tag of tags) {
     const v = parseSemver(tag, prefix);

@@ -90,6 +90,8 @@ changelog:
       newTag: "v1.0.1",
       compareUrl: "https://fj.example/owner/repo/compare/v1.0.0...v1.0.1",
     });
-    expect(out).toContain("**Full Changelog**: https://fj.example/owner/repo/compare/v1.0.0...v1.0.1");
+    expect(out).toContain(
+      "**Full Changelog**: https://fj.example/owner/repo/compare/v1.0.0...v1.0.1",
+    );
   });
 });

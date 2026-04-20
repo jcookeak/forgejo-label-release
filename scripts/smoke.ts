@@ -48,7 +48,11 @@ function startMockServer(state: MockState): Promise<{ url: string; close: () => 
       if (req.method === "POST" && url.endsWith("/releases")) {
         state.created.push({ method: req.method, url, body });
         const asObj = body as { tag_name: string; target_commitish: string };
-        return json(201, { id: 1, tag_name: asObj.tag_name, target_commitish: asObj.target_commitish });
+        return json(201, {
+          id: 1,
+          tag_name: asObj.tag_name,
+          target_commitish: asObj.target_commitish,
+        });
       }
 
       json(404, { message: `unhandled ${req.method} ${url}` });
@@ -163,7 +167,10 @@ async function main(): Promise<void> {
     );
     await run(rt);
 
-    assert(rt.outputs["released"] === "true", `expected released=true, got ${rt.outputs["released"]}`);
+    assert(
+      rt.outputs["released"] === "true",
+      `expected released=true, got ${rt.outputs["released"]}`,
+    );
     assert(rt.outputs["bump"] === "minor", `expected bump=minor, got ${rt.outputs["bump"]}`);
     assert(rt.outputs["tag"] === "v1.3.0", `expected tag=v1.3.0, got ${rt.outputs["tag"]}`);
     assert(rt.outputs["previous-tag"] === "v1.2.3", `expected previous-tag=v1.2.3`);

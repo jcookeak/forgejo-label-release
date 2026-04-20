@@ -87,7 +87,14 @@ describe("run()", () => {
       latestRelease: { id: 1, tagName: "v1.0.0", targetCommitish: "old" },
       compareCommits: [{ sha: "a", message: "chore (#1)" }],
       prs: {
-        1: { number: 1, title: "chore", author: "a", labels: ["chore"], url: "", mergeCommitSha: "" },
+        1: {
+          number: 1,
+          title: "chore",
+          author: "a",
+          labels: ["chore"],
+          url: "",
+          mergeCommitSha: "",
+        },
       },
     });
     await run(rt, { clientFactory: () => client });
@@ -104,8 +111,22 @@ describe("run()", () => {
         { sha: "b", message: "Fix typo (#11)" },
       ],
       prs: {
-        10: { number: 10, title: "Add endpoint", author: "alice", labels: ["feature"], url: "", mergeCommitSha: "" },
-        11: { number: 11, title: "Fix typo", author: "bob", labels: ["bug"], url: "", mergeCommitSha: "" },
+        10: {
+          number: 10,
+          title: "Add endpoint",
+          author: "alice",
+          labels: ["feature"],
+          url: "",
+          mergeCommitSha: "",
+        },
+        11: {
+          number: 11,
+          title: "Fix typo",
+          author: "bob",
+          labels: ["bug"],
+          url: "",
+          mergeCommitSha: "",
+        },
       },
     });
     await run(rt, { clientFactory: () => client });
@@ -121,7 +142,14 @@ describe("run()", () => {
       latestRelease: null,
       tags: [],
       mergedPulls: [
-        { number: 1, title: "Break", author: "a", labels: ["breaking"], url: "", mergeCommitSha: "" },
+        {
+          number: 1,
+          title: "Break",
+          author: "a",
+          labels: ["breaking"],
+          url: "",
+          mergeCommitSha: "",
+        },
       ],
     });
     await run(rt, { clientFactory: () => client });

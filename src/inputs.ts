@@ -26,22 +26,17 @@ function parseRepository(repoSpec: string): { owner: string; repo: string } {
 }
 
 export function readInputs(rt: Runtime): Inputs {
-  const token =
-    rt.getInput("token") ??
-    rt.getEnv("GITHUB_TOKEN") ??
-    rt.getEnv("FORGEJO_TOKEN");
+  const token = rt.getInput("token") ?? rt.getEnv("GITHUB_TOKEN") ?? rt.getEnv("FORGEJO_TOKEN");
   if (!token) throw new Error("Missing 'token' input (or GITHUB_TOKEN/FORGEJO_TOKEN env).");
 
-  const serverUrl =
-    rt.getInput("server-url") ?? rt.getEnv("GITHUB_SERVER_URL");
+  const serverUrl = rt.getInput("server-url") ?? rt.getEnv("GITHUB_SERVER_URL");
   if (!serverUrl) throw new Error("Missing 'server-url' input (or GITHUB_SERVER_URL env).");
 
   const repoSpec = rt.getInput("repository") ?? rt.getEnv("GITHUB_REPOSITORY");
   if (!repoSpec) throw new Error("Missing 'repository' input (or GITHUB_REPOSITORY env).");
   const { owner, repo } = parseRepository(repoSpec);
 
-  const targetCommitish =
-    rt.getInput("target-commitish") ?? rt.getEnv("GITHUB_SHA");
+  const targetCommitish = rt.getInput("target-commitish") ?? rt.getEnv("GITHUB_SHA");
   if (!targetCommitish) throw new Error("Missing 'target-commitish' input (or GITHUB_SHA env).");
 
   return {

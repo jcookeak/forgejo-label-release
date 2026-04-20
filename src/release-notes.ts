@@ -53,9 +53,7 @@ export function renderNotes(
   } else {
     const used = new Set<number>();
     for (const cat of template.categories) {
-      const matched = included.filter(
-        (pr) => !used.has(pr.number) && categoryMatches(pr, cat),
-      );
+      const matched = included.filter((pr) => !used.has(pr.number) && categoryMatches(pr, cat));
       for (const pr of matched) used.add(pr.number);
       if (matched.length === 0) continue;
       sections.push(`### ${cat.title}\n\n${bulletsFor(matched)}`);
@@ -93,7 +91,5 @@ function isExcluded(pr: PullRequestRef, exclude: TemplateCategory["exclude"]): b
 }
 
 function bulletsFor(prs: PullRequestRef[]): string {
-  return prs
-    .map((pr) => `* ${pr.title} by @${pr.author} in #${pr.number}`)
-    .join("\n");
+  return prs.map((pr) => `* ${pr.title} by @${pr.author} in #${pr.number}`).join("\n");
 }

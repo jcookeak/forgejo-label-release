@@ -20,9 +20,7 @@ describe("extractPrNumber", () => {
 
 describe("extractPrNumbers", () => {
   it("dedupes while preserving order", () => {
-    expect(
-      extractPrNumbers(["Feat (#3)", "Fix (#1)", "Feat again (#3)", "Docs"]),
-    ).toEqual([3, 1]);
+    expect(extractPrNumbers(["Feat (#3)", "Fix (#1)", "Feat again (#3)", "Docs"])).toEqual([3, 1]);
   });
 });
 

@@ -35,30 +35,30 @@ jobs:
 
 ### Inputs
 
-| Input              | Default                                      | Description                                                                     |
-| ------------------ | -------------------------------------------- | ------------------------------------------------------------------------------- |
-| `token`            | `$GITHUB_TOKEN` / `$FORGEJO_TOKEN`           | API token with `contents: write`.                                               |
-| `server-url`       | `$GITHUB_SERVER_URL`                         | Forgejo base URL.                                                               |
-| `repository`       | `$GITHUB_REPOSITORY`                         | `owner/repo`.                                                                   |
-| `target-commitish` | `$GITHUB_SHA`                                | The commit/branch the release should point at.                                  |
-| `major-labels`     | `breaking,major,semver:major`                | Comma- or newline-separated labels that trigger a major bump.                   |
-| `minor-labels`     | `feature,enhancement,minor,semver:minor`     | Labels that trigger a minor bump.                                               |
-| `patch-labels`     | `bug,fix,patch,semver:patch`                 | Labels that trigger a patch bump.                                               |
-| `tag-prefix`       | `v`                                          | Prefix prepended to generated tags.                                             |
-| `release-template` | `.forgejo/release.yml`                       | Path to a GitHub-style changelog config (see below). Missing file = flat list.  |
-| `draft`            | `false`                                      | Create the release as a draft.                                                  |
-| `prerelease`       | `false`                                      | Mark the release as a prerelease.                                               |
-| `dry-run`          | `false`                                      | Compute the bump and notes but skip the API call.                               |
+| Input              | Default                                  | Description                                                                    |
+| ------------------ | ---------------------------------------- | ------------------------------------------------------------------------------ |
+| `token`            | `$GITHUB_TOKEN` / `$FORGEJO_TOKEN`       | API token with `contents: write`.                                              |
+| `server-url`       | `$GITHUB_SERVER_URL`                     | Forgejo base URL.                                                              |
+| `repository`       | `$GITHUB_REPOSITORY`                     | `owner/repo`.                                                                  |
+| `target-commitish` | `$GITHUB_SHA`                            | The commit/branch the release should point at.                                 |
+| `major-labels`     | `breaking,major,semver:major`            | Comma- or newline-separated labels that trigger a major bump.                  |
+| `minor-labels`     | `feature,enhancement,minor,semver:minor` | Labels that trigger a minor bump.                                              |
+| `patch-labels`     | `bug,fix,patch,semver:patch`             | Labels that trigger a patch bump.                                              |
+| `tag-prefix`       | `v`                                      | Prefix prepended to generated tags.                                            |
+| `release-template` | `.forgejo/release.yml`                   | Path to a GitHub-style changelog config (see below). Missing file = flat list. |
+| `draft`            | `false`                                  | Create the release as a draft.                                                 |
+| `prerelease`       | `false`                                  | Mark the release as a prerelease.                                              |
+| `dry-run`          | `false`                                  | Compute the bump and notes but skip the API call.                              |
 
 ### Outputs
 
-| Output         | Description                                           |
-| -------------- | ----------------------------------------------------- |
-| `released`     | `true` if a release was created, `false` if skipped.  |
-| `tag`          | The tag that was (or would have been) created.        |
-| `previous-tag` | The previous release tag used as the baseline.        |
-| `bump`         | `major`, `minor`, `patch`, or `none`.                 |
-| `notes`        | The rendered release notes.                           |
+| Output         | Description                                          |
+| -------------- | ---------------------------------------------------- |
+| `released`     | `true` if a release was created, `false` if skipped. |
+| `tag`          | The tag that was (or would have been) created.       |
+| `previous-tag` | The previous release tag used as the baseline.       |
+| `bump`         | `major`, `minor`, `patch`, or `none`.                |
+| `notes`        | The rendered release notes.                          |
 
 ## Bump rules
 
