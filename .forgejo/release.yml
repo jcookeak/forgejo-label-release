@@ -9,17 +9,16 @@ changelog:
     - title: Breaking Changes
       labels:
         - breaking
-        - semver:major
     - title: New Features
       labels:
-        - feature
         - enhancement
-        - semver:minor
     - title: Bug Fixes
       labels:
         - bug
-        - fix
-        - semver:patch
+    - title: Documentation
+      labels:
+        - documentation
     - title: Other Changes
       labels:
+        - non-functional
         - "*"

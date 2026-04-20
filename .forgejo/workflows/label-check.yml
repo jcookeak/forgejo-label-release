@@ -1,0 +1,25 @@
+name: Label Check
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled, edited]
+
+jobs:
+  label-check:
+    runs-on: ubuntu-arm-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Enforce PR label
+        uses: custom-actions/label-check@v0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          mode: at-least-one
+          labels: |
+            breaking
+            enhancement
+            bug
+            documentation
+            non-functional

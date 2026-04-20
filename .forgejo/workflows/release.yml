@@ -24,6 +24,9 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           release-template: .forgejo/release.yml
+          major-labels: breaking
+          minor-labels: enhancement
+          patch-labels: bug
 
       - name: Move floating tags
         if: steps.release.outputs.released == 'true'
