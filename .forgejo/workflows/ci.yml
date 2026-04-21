@@ -5,7 +5,7 @@ on:
 
 jobs:
   verify:
-    runs-on: ubuntu-arm-latest
+    runs-on: ubuntu-24-arm-standard
     steps:
       - uses: actions/checkout@v6
 
