@@ -20,6 +20,7 @@ jobs:
           labels: |
             breaking
             enhancement
+            dependency
             bug
             documentation
             non-functional
