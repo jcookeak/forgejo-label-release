@@ -4,7 +4,7 @@
   "packageRules": [
     {
       "matchPackageNames": ["custom-actions/label-check"],
-      "dependencyDashboardApprove": true
+      "dependencyDashboardApproval": true
     }
   ],
   "addLabels": ["dependency"]
