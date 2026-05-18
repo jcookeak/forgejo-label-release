@@ -6,7 +6,7 @@ on:
 
 jobs:
   update:
-    runs-on: ubuntu-24-arm-xsmall
+    runs-on: [xsmall, arm64]
     permissions:
       contents: write
     steps:

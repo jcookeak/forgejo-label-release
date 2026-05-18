@@ -6,7 +6,7 @@ on:
 
 jobs:
   label-check:
-    runs-on: ubuntu-24-arm-xsmall
+    runs-on: [xsmall, arm64]
     permissions:
       pull-requests: read
     steps:
