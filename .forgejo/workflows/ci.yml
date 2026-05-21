@@ -5,7 +5,7 @@ on:
 
 jobs:
   verify:
-    runs-on: [standard, arm64]
+    runs-on: standard
     steps:
       - uses: actions/checkout@v6
 

@@ -6,7 +6,7 @@ on:
 
 jobs:
   label-check:
-    runs-on: [xsmall, arm64]
+    runs-on: xsmall
     permissions:
       pull-requests: read
     steps:

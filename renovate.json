@@ -5,6 +5,11 @@
     {
       "matchPackageNames": ["custom-actions/label-check"],
       "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Automerge non-major updates",
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
     }
   ],
   "addLabels": ["dependency"]

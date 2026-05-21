@@ -6,7 +6,7 @@ on:
 
 jobs:
   release:
-    runs-on: [xsmall, arm64]
+    runs-on: xsmall
     permissions:
       contents: write
     steps:
