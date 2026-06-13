@@ -1,0 +1,52 @@
+# Throwaway workflow to validate the runner's OTel DAG metadata + step-log
+# correlation (infra/runner OTel work). Exercises:
+#   - forgejo.job_needs edges, including a fan-in (publish needs setup+package)
+#   - forgejo.matrix.* on a 2-D matrix (build: arch x flavor = 4 cells)
+#   - step-log SpanId binding for container action stdout (checkout) and
+#     run-step output (echo)
+# Manual-only (workflow_dispatch) so it never runs on normal pushes.
+# Delete once the OTel DAG/log pipeline is confirmed in ClickHouse.
+name: OTel DAG Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup:
+    runs-on: xsmall
+    steps:
+      - name: setup
+        run: |
+          echo "setup line 1"
+          echo "setup line 2"
+
+  build:
+    needs: [setup]
+    runs-on: xsmall
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        flavor: [debug, release]
+    steps:
+      # checkout is a docker'd JS action — its stdout must bind to this
+      # step's span (the SpanId fix), not the root workflow span.
+      - uses: actions/checkout@v6
+      - name: build
+        run: |
+          echo "building arch=${{ matrix.arch }} flavor=${{ matrix.flavor }}"
+          echo "matrix cell second line"
+
+  package:
+    needs: [build]
+    runs-on: xsmall
+    steps:
+      - name: package
+        run: echo "packaging"
+
+  publish:
+    needs: [setup, package]
+    runs-on: xsmall
+    steps:
+      - name: publish
+        run: echo "publishing - fan-in needs setup and package"
