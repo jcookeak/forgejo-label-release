@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { run } from "../src/main.ts";
 import type { Runtime } from "../src/runtime.ts";
-import type { ForgejoClient, CreateReleaseInput } from "../src/forgejo.ts";
+import { ForgejoApiError, type ForgejoClient, type CreateReleaseInput } from "../src/forgejo.ts";
 import type { PullRequestRef, ReleaseRef } from "../src/types.ts";
 
 class FakeRuntime implements Runtime {
@@ -40,6 +40,7 @@ interface FakeOptions {
   latestRelease?: ReleaseRef | null;
   tags?: string[];
   compareCommits?: { sha: string; message: string }[];
+  compareError?: Error;
   prs?: Record<number, PullRequestRef>;
   mergedPulls?: PullRequestRef[];
 }
@@ -50,7 +51,10 @@ function fakeClient(opts: FakeOptions): { client: ForgejoClient; created: Create
     listTags: async () => opts.tags ?? [],
     getLatestRelease: async () => opts.latestRelease ?? null,
     listMergedPullRequests: async () => opts.mergedPulls ?? [],
-    compareCommits: async () => opts.compareCommits ?? [],
+    compareCommits: async () => {
+      if (opts.compareError) throw opts.compareError;
+      return opts.compareCommits ?? [];
+    },
     getPullRequest: async (n) => {
       const pr = opts.prs?.[n];
       if (!pr) throw new Error(`no fake PR for ${n}`);
@@ -169,5 +173,51 @@ describe("run()", () => {
     expect(created).toHaveLength(0);
     expect(rt.outputs["tag"]).toBe("v0.1.1");
     expect(rt.outputs["released"]).toBe("false");
+  });
+
+  it("falls back to merged PRs since the previous release target when compare is hidden", async () => {
+    const { client, created } = fakeClient({
+      latestRelease: { id: 1, tagName: "v1.2.3", targetCommitish: "previous-release-sha" },
+      compareError: new ForgejoApiError(
+        "compare commits",
+        404,
+        "Not Found",
+        `{"message":"Can't read pulls or can't read UnitTypeCode"}`,
+      ),
+      mergedPulls: [
+        {
+          number: 12,
+          title: "Fix regression",
+          author: "alice",
+          labels: ["bug"],
+          url: "",
+          mergeCommitSha: "new-sha",
+        },
+        {
+          number: 11,
+          title: "Previous release",
+          author: "bob",
+          labels: ["feature"],
+          url: "",
+          mergeCommitSha: "previous-release-sha",
+        },
+        {
+          number: 10,
+          title: "Older change",
+          author: "chris",
+          labels: ["breaking"],
+          url: "",
+          mergeCommitSha: "older-sha",
+        },
+      ],
+    });
+
+    await run(rt, { clientFactory: () => client });
+
+    expect(created).toHaveLength(1);
+    expect(created[0]?.tagName).toBe("v1.2.4");
+    expect(rt.outputs["bump"]).toBe("patch");
+    expect(rt.outputs["notes"]).toContain("Fix regression");
+    expect(rt.outputs["notes"]).not.toContain("Older change");
   });
 });

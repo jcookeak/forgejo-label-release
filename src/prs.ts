@@ -1,4 +1,4 @@
-import type { ForgejoClient } from "./forgejo.ts";
+import { ForgejoApiError, type ForgejoClient } from "./forgejo.ts";
 import type { PullRequestRef } from "./types.ts";
 
 const MERGE_COMMIT_RE = /^Merge pull request #(\d+)/m;
@@ -30,9 +30,27 @@ export async function findMergedPrs(
   client: ForgejoClient,
   base: string,
   head: string,
+  opts: { baselineTargetCommitish?: string } = {},
 ): Promise<PullRequestRef[]> {
-  const commits = await client.compareCommits(base, head);
-  const numbers = extractPrNumbers(commits.map((c) => c.message));
-  const prs = await Promise.all(numbers.map((n) => client.getPullRequest(n)));
-  return prs;
+  try {
+    const commits = await client.compareCommits(base, head);
+    const numbers = extractPrNumbers(commits.map((c) => c.message));
+    const prs = await Promise.all(numbers.map((n) => client.getPullRequest(n)));
+    return prs;
+  } catch (err) {
+    if (!(err instanceof ForgejoApiError) || err.status !== 404) throw err;
+    return prsSinceBaselineTarget(
+      await client.listMergedPullRequests(),
+      opts.baselineTargetCommitish,
+    );
+  }
+}
+
+function prsSinceBaselineTarget(
+  prs: PullRequestRef[],
+  baselineTargetCommitish: string | undefined,
+): PullRequestRef[] {
+  if (!baselineTargetCommitish) return prs;
+  const baselineIndex = prs.findIndex((pr) => pr.mergeCommitSha === baselineTargetCommitish);
+  return baselineIndex === -1 ? prs : prs.slice(0, baselineIndex);
 }

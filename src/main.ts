@@ -16,7 +16,9 @@ export async function run(rt: Runtime, deps: RunDeps = {}): Promise<void> {
 
   const baseline = await resolveBaseline(client, inputs);
   const prs = baseline
-    ? await findMergedPrs(client, baseline.tag, inputs.targetCommitish)
+    ? await findMergedPrs(client, baseline.tag, inputs.targetCommitish, {
+        baselineTargetCommitish: baseline.targetCommitish,
+      })
     : await client.listMergedPullRequests();
 
   rt.info(`Found ${prs.length} PR(s) since ${baseline?.tag ?? "the beginning"}.`);
@@ -75,11 +77,11 @@ export async function run(rt: Runtime, deps: RunDeps = {}): Promise<void> {
 async function resolveBaseline(
   client: ForgejoClient,
   inputs: Inputs,
-): Promise<{ tag: string; version: SemVer } | null> {
+): Promise<{ tag: string; version: SemVer; targetCommitish?: string } | null> {
   const latest = await client.getLatestRelease();
   if (latest) {
     const v = parseSemver(latest.tagName, inputs.tagPrefix);
-    if (v) return { tag: latest.tagName, version: v };
+    if (v) return { tag: latest.tagName, version: v, targetCommitish: latest.targetCommitish };
   }
   const tags = await client.listTags();
   return pickLatest(tags, inputs.tagPrefix);

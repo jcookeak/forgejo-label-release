@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-arm-latest
     permissions:
       contents: write
+      pull-requests: read
     steps:
       - uses: actions/checkout@v6
         with:
@@ -37,7 +38,7 @@ jobs:
 
 | Input              | Default                                  | Description                                                                    |
 | ------------------ | ---------------------------------------- | ------------------------------------------------------------------------------ |
-| `token`            | `$GITHUB_TOKEN` / `$FORGEJO_TOKEN`       | API token with `contents: write`.                                              |
+| `token`            | `$GITHUB_TOKEN` / `$FORGEJO_TOKEN`       | API token with `contents: write` and PR read access.                           |
 | `server-url`       | `$GITHUB_SERVER_URL`                     | Forgejo base URL.                                                              |
 | `repository`       | `$GITHUB_REPOSITORY`                     | `owner/repo`.                                                                  |
 | `target-commitish` | `$GITHUB_SHA`                            | The commit/branch the release should point at.                                 |

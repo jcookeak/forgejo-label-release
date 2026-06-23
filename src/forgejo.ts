@@ -138,10 +138,22 @@ export class HttpForgejoClient implements ForgejoClient {
   }
 }
 
+export class ForgejoApiError extends Error {
+  constructor(
+    readonly what: string,
+    readonly status: number,
+    readonly statusText: string,
+    readonly body: string,
+  ) {
+    super(`Forgejo API ${what} failed: ${status} ${statusText} ${body}`);
+    this.name = "ForgejoApiError";
+  }
+}
+
 async function assertOk(res: Response, what: string): Promise<void> {
   if (res.ok) return;
   const text = await res.text().catch(() => "");
-  throw new Error(`Forgejo API ${what} failed: ${res.status} ${res.statusText} ${text}`);
+  throw new ForgejoApiError(what, res.status, res.statusText, text);
 }
 
 export class FetchHttp implements HttpClient {

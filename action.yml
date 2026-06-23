@@ -4,7 +4,7 @@ author: "Jonathon Cooke-Akaiwa"
 
 inputs:
   token:
-    description: "Forgejo API token with repo write access. Defaults to $GITHUB_TOKEN / $FORGEJO_TOKEN."
+    description: "Forgejo API token with release write access and PR read access. Defaults to $GITHUB_TOKEN / $FORGEJO_TOKEN."
     required: false
   server-url:
     description: "Forgejo server base URL. Defaults to $GITHUB_SERVER_URL."

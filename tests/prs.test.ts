@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { extractPrNumber, extractPrNumbers, findMergedPrs } from "../src/prs.ts";
-import type { ForgejoClient } from "../src/forgejo.ts";
+import { ForgejoApiError, type ForgejoClient } from "../src/forgejo.ts";
 import type { PullRequestRef, ReleaseRef } from "../src/types.ts";
 
 describe("extractPrNumber", () => {
@@ -25,6 +25,17 @@ describe("extractPrNumbers", () => {
 });
 
 describe("findMergedPrs", () => {
+  function pr(number: number, mergeCommitSha = ""): PullRequestRef {
+    return {
+      number,
+      title: `PR ${number}`,
+      author: "alice",
+      labels: [],
+      url: "",
+      mergeCommitSha,
+    };
+  }
+
   it("fetches each unique PR discovered via commit-walk", async () => {
     const calls: number[] = [];
     const client: ForgejoClient = {
@@ -53,5 +64,45 @@ describe("findMergedPrs", () => {
     const prs = await findMergedPrs(client, "v1.0.0", "HEAD");
     expect(prs.map((p) => p.number)).toEqual([10, 11]);
     expect(calls.sort()).toEqual([10, 11]);
+  });
+
+  it("falls back to merged PRs when Forgejo hides compare commits", async () => {
+    const client: ForgejoClient = {
+      listTags: async () => [],
+      getLatestRelease: async (): Promise<ReleaseRef | null> => null,
+      listMergedPullRequests: async () => [pr(12, "newer"), pr(11, "previous"), pr(10, "older")],
+      compareCommits: async () => {
+        throw new ForgejoApiError(
+          "compare commits",
+          404,
+          "Not Found",
+          `{"message":"Can't read pulls or can't read UnitTypeCode"}`,
+        );
+      },
+      getPullRequest: async (n) => pr(n),
+      createRelease: async () => ({ id: 0, tagName: "", targetCommitish: "" }),
+    };
+
+    const prs = await findMergedPrs(client, "v1.0.0", "HEAD", {
+      baselineTargetCommitish: "previous",
+    });
+    expect(prs.map((p) => p.number)).toEqual([12]);
+  });
+
+  it("keeps non-404 compare failures fatal", async () => {
+    const client: ForgejoClient = {
+      listTags: async () => [],
+      getLatestRelease: async (): Promise<ReleaseRef | null> => null,
+      listMergedPullRequests: async () => [],
+      compareCommits: async () => {
+        throw new ForgejoApiError("compare commits", 500, "Internal Server Error", "");
+      },
+      getPullRequest: async (n) => pr(n),
+      createRelease: async () => ({ id: 0, tagName: "", targetCommitish: "" }),
+    };
+
+    await expect(findMergedPrs(client, "v1.0.0", "HEAD")).rejects.toThrow(
+      /Forgejo API compare commits failed: 500/,
+    );
   });
 });
