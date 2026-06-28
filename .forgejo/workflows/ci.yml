@@ -6,8 +6,12 @@ on:
 jobs:
   verify:
     runs-on: standard
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
 
       - uses: actions/setup-node@v6
         with:
@@ -29,12 +33,17 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Verify dist/ is up to date
+      - name: Commit updated dist
         run: |
-          if ! git diff --quiet -- dist/; then
-            echo "::error::dist/ is out of date — run 'npm run build' and commit the result."
-            git --no-pager diff -- dist/
-            exit 1
+          set -euo pipefail
+
+          if [[ -n "$(git status --porcelain -- dist/)" ]]; then
+            git config user.name "forgejo-actions[bot]"
+            git config user.email "forgejo-actions[bot]@users.noreply.forgejo.org"
+
+            git add dist/
+            git commit -m "chore: update dist"
+            git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
           fi
 
       - name: Smoke test
