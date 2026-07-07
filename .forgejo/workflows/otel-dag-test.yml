@@ -31,7 +31,7 @@ jobs:
     steps:
       # checkout is a docker'd JS action — its stdout must bind to this
       # step's span (the SpanId fix), not the root workflow span.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: build
         run: |
           echo "building arch=${{ matrix.arch }} flavor=${{ matrix.flavor }}"
