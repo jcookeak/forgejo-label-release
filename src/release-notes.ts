@@ -5,9 +5,7 @@ const WILDCARD = "*";
 
 export function parseTemplate(source: string): ReleaseTemplate {
   const raw = parseYaml(source) as
-    | { changelog?: { exclude?: Excludes; categories?: RawCategory[] } }
-    | null
-    | undefined;
+    { changelog?: { exclude?: Excludes; categories?: RawCategory[] } } | null | undefined;
   const cl = raw?.changelog;
   if (!cl) return { categories: [] };
   const categories = (cl.categories ?? []).map(normalizeCategory);
