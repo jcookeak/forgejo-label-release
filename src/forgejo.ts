@@ -5,6 +5,7 @@ export interface ForgejoClient {
   getLatestRelease(): Promise<ReleaseRef | null>;
   compareCommits(base: string, head: string): Promise<{ sha: string; message: string }[]>;
   getPullRequest(number: number): Promise<PullRequestRef>;
+  /** Merged PRs in descending merge-time order, across all pages. */
   listMergedPullRequests(): Promise<PullRequestRef[]>;
   createRelease(input: CreateReleaseInput): Promise<ReleaseRef>;
 }
@@ -88,7 +89,7 @@ export class HttpForgejoClient implements ForgejoClient {
   }
 
   async listMergedPullRequests(): Promise<PullRequestRef[]> {
-    const out: PullRequestRef[] = [];
+    const out: { pr: PullRequestRef; mergedAt: number }[] = [];
     let page = 1;
     for (;;) {
       const res = await this.http.request(
@@ -104,23 +105,33 @@ export class HttpForgejoClient implements ForgejoClient {
         labels: { name: string }[];
         merge_commit_sha: string | null;
         merged: boolean;
+        merged_at: string | null;
       }[];
       if (batch.length === 0) break;
       for (const pr of batch) {
         if (!pr.merged) continue;
+        const mergedAt = pr.merged_at === null ? NaN : Date.parse(pr.merged_at);
+        if (!Number.isFinite(mergedAt)) {
+          throw new Error(`Merged PR #${pr.number} has no valid merge timestamp`);
+        }
         out.push({
-          number: pr.number,
-          title: pr.title,
-          author: pr.user?.login ?? "",
-          labels: pr.labels.map((l) => l.name),
-          url: pr.html_url,
-          mergeCommitSha: pr.merge_commit_sha ?? "",
+          mergedAt,
+          pr: {
+            number: pr.number,
+            title: pr.title,
+            author: pr.user?.login ?? "",
+            labels: pr.labels.map((l) => l.name),
+            url: pr.html_url,
+            mergeCommitSha: pr.merge_commit_sha ?? "",
+          },
         });
       }
       if (batch.length < 50) break;
       page++;
     }
-    return out;
+    // sort=newest orders by creation time. An old PR can merge after a newer
+    // release baseline, including when it appears on a later API page.
+    return out.sort((a, b) => b.mergedAt - a.mergedAt).map(({ pr }) => pr);
   }
 
   async createRelease(input: CreateReleaseInput): Promise<ReleaseRef> {

@@ -42,6 +42,7 @@ export async function findMergedPrs(
     return prsSinceBaselineTarget(
       await client.listMergedPullRequests(),
       opts.baselineTargetCommitish,
+      head,
     );
   }
 }
@@ -49,7 +50,12 @@ export async function findMergedPrs(
 function prsSinceBaselineTarget(
   prs: PullRequestRef[],
   baselineTargetCommitish: string | undefined,
+  head: string,
 ): PullRequestRef[] {
+  // A release may be rerun after another PR has merged. When the requested
+  // commit identifies a merged PR, exclude changes newer than that commit.
+  const headIndex = prs.findIndex((pr) => pr.mergeCommitSha === head);
+  if (headIndex >= 0) prs = prs.slice(headIndex);
   if (!baselineTargetCommitish) return prs;
   const baselineIndex = prs.findIndex((pr) => pr.mergeCommitSha === baselineTargetCommitish);
   return baselineIndex === -1 ? prs : prs.slice(0, baselineIndex);
