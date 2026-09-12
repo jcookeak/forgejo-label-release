@@ -103,7 +103,7 @@ npm install
 npm run typecheck   # tsc
 npm test            # vitest
 npm run smoke       # end-to-end with a mock Forgejo server
-npm run build       # tsc + ncc → dist/index.js (commit the result)
+npm run build       # tsc + ncc → dist/index.js (release workflow only)
 ```
 
 Source layout:
@@ -123,4 +123,7 @@ tests/              unit tests per module + main() with a fake client
 scripts/smoke.ts    spins up a mock Forgejo server and exercises the full flow
 ```
 
-The action self-releases on every push to `main` via `.forgejo/workflows/release.yml`, which invokes `uses: ./`. `dist/` is committed and CI fails if it's out of sync with source.
+The action self-releases on every push to `main` via `.forgejo/workflows/release.yml`.
+The workflow builds `dist/` on the `release-artifacts` branch and creates version
+tags from that generated commit. Use a version tag when consuming this action;
+`@main` is not a packaged release.

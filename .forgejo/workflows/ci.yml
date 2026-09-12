@@ -46,18 +46,5 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Commit updated dist
-        run: |
-          set -euo pipefail
-
-          if [[ -n "$(git status --porcelain -- dist/)" ]]; then
-            git config user.name "forgejo-actions[bot]"
-            git config user.email "forgejo-actions[bot]@users.noreply.forgejo.org"
-
-            git add dist/
-            git commit -m "chore: update dist"
-            git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
-          fi
-
       - name: Smoke test
         run: npm run smoke

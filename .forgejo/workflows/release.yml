@@ -18,12 +18,29 @@ jobs:
         with:
           node-version: "24"
 
+      - name: Build release artifacts
+        run: npm ci && npm run build
+
+      - name: Publish release artifacts branch
+        id: artifacts
+        run: |
+          set -euo pipefail
+          git config user.name "forgejo-actions[bot]"
+          git config user.email "forgejo-actions[bot]@users.noreply.forgejo.org"
+          git add -f dist/
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: build release artifacts for ${GITHUB_SHA::12}"
+          fi
+          git push --force origin "HEAD:release-artifacts"
+          echo "sha=$(git rev-parse HEAD)" >> "$FORGEJO_OUTPUT"
+
       - name: Cut release
         id: release
-        uses: ./
+        uses: custom-actions/label-release@v0.0.16
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           release-template: .forgejo/release.yml
+          target-commitish: ${{ steps.artifacts.outputs.sha }}
           major-labels: breaking
           minor-labels: enhancement
           patch-labels: bug, dependency
@@ -56,7 +73,7 @@ jobs:
           remote="https://x-access-token:${TOKEN}@${GITHUB_SERVER_URL#https://}/${GITHUB_REPOSITORY}.git"
 
           for floating in "$major" "$minor"; do
-            echo "Updating $floating -> $GITHUB_SHA"
-            git tag -f "$floating" "$GITHUB_SHA"
+            echo "Updating $floating -> ${{ steps.artifacts.outputs.sha }}"
+            git tag -f "$floating" "${{ steps.artifacts.outputs.sha }}"
             git push -f "$remote" "refs/tags/$floating"
           done
