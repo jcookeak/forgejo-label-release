@@ -1,3 +1,5 @@
+import { publishExplicit } from "./publish.ts";
+import type { ReleasePublisherClient } from "./forgejo.ts";
 import { readInputs } from "./inputs.ts";
 import { FetchHttp, HttpForgejoClient, type ForgejoClient } from "./forgejo.ts";
 import { findMergedPrs } from "./prs.ts";
@@ -14,12 +16,34 @@ export async function run(rt: Runtime, deps: RunDeps = {}): Promise<void> {
   const inputs = readInputs(rt);
   const client = (deps.clientFactory ?? defaultClient)(inputs);
 
+  if (inputs.publishTag) {
+    const version = parseSemver(inputs.publishTag, inputs.tagPrefix);
+    if (!version || version.prerelease)
+      throw new Error("publish-tag requires a stable SemVer tag.");
+    if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(inputs.targetCommitish))
+      throw new Error("Explicit publication requires an immutable commit SHA.");
+    await publishExplicit(client as ForgejoClient & ReleasePublisherClient, {
+      tagName: inputs.publishTag,
+      targetCommitish: inputs.targetCommitish,
+      name: inputs.publishTag,
+      body: inputs.releaseNotes,
+      draft: inputs.draft,
+      prerelease: inputs.prerelease,
+    });
+    rt.setOutput("released", "true");
+    rt.setOutput("tag", inputs.publishTag);
+    rt.setOutput("notes", inputs.releaseNotes);
+    return;
+  }
   const baseline = await resolveBaseline(client, inputs);
-  const prs = baseline
-    ? await findMergedPrs(client, baseline.tag, inputs.targetCommitish, {
-        baselineTargetCommitish: baseline.targetCommitish,
-      })
-    : await client.listMergedPullRequests();
+  const prs =
+    inputs.pullRequestNumbers !== undefined
+      ? await Promise.all(inputs.pullRequestNumbers.map((number) => client.getPullRequest(number)))
+      : baseline
+        ? await findMergedPrs(client, baseline.tag, inputs.targetCommitish, {
+            baselineTargetCommitish: baseline.targetCommitish,
+          })
+        : await client.listMergedPullRequests();
 
   rt.info(`Found ${prs.length} PR(s) since ${baseline?.tag ?? "the beginning"}.`);
 
@@ -78,6 +102,13 @@ async function resolveBaseline(
   client: ForgejoClient,
   inputs: Inputs,
 ): Promise<{ tag: string; version: SemVer; targetCommitish?: string } | null> {
+  if (inputs.baselineTag === "none") return null;
+  if (inputs.baselineTag !== undefined) {
+    const version = parseSemver(inputs.baselineTag, inputs.tagPrefix);
+    if (!version) throw new Error("Invalid baseline-tag.");
+    if (version.prerelease) throw new Error("Explicit baselines must be stable releases.");
+    return { tag: inputs.baselineTag, version };
+  }
   const latest = await client.getLatestRelease();
   if (latest) {
     const v = parseSemver(latest.tagName, inputs.tagPrefix);

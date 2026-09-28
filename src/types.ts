@@ -22,6 +22,10 @@ export interface Inputs {
   draft: boolean;
   prerelease: boolean;
   dryRun: boolean;
+  baselineTag?: string;
+  pullRequestNumbers?: number[];
+  publishTag?: string;
+  releaseNotes: string;
 }
 
 export interface PullRequestRef {
@@ -37,6 +41,9 @@ export interface ReleaseRef {
   id: number;
   tagName: string;
   targetCommitish: string;
+  body?: string;
+  draft?: boolean;
+  prerelease?: boolean;
 }
 
 export interface TemplateCategory {

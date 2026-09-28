@@ -43,6 +43,18 @@ inputs:
     description: "Mark the release as a prerelease."
     required: false
     default: "false"
+  baseline-tag:
+    description: "Explicit reconciled baseline tag; 'none' for no prior release. Omit for automatic repository-wide discovery."
+    required: false
+  pull-request-numbers:
+    description: "Comma/newline-separated PR numbers already selected by the caller's target history. Requires baseline-tag; avoids repository-wide PR discovery."
+    required: false
+  publish-tag:
+    description: "Publish this explicit stable SemVer tag without calculating a version. Requires an immutable target-commitish SHA. Matching existing releases succeed; conflicts fail."
+    required: false
+  release-notes:
+    description: "Notes to use with publish-tag, normally from an earlier dry-run output."
+    required: false
   dry-run:
     description: "Compute the bump and notes but do not create a release."
     required: false

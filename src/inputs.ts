@@ -36,10 +36,38 @@ export function readInputs(rt: Runtime): Inputs {
   if (!repoSpec) throw new Error("Missing 'repository' input (or GITHUB_REPOSITORY env).");
   const { owner, repo } = parseRepository(repoSpec);
 
-  const targetCommitish = rt.getInput("target-commitish") ?? rt.getEnv("GITHUB_SHA");
-  if (!targetCommitish) throw new Error("Missing 'target-commitish' input (or GITHUB_SHA env).");
+  const publishTag = rt.getInput("publish-tag");
+  const targetCommitish = rt.getInput("target-commitish") ?? rt.getEnv("GITHUB_SHA") ?? "";
+  if (!targetCommitish && !publishTag)
+    throw new Error("Missing 'target-commitish' input (or GITHUB_SHA env).");
 
+  const baselineTag = rt.getInput("baseline-tag");
+  const selected = rt.getInput("pull-request-numbers");
+  if (selected !== undefined && !baselineTag) {
+    throw new Error("pull-request-numbers requires an explicit baseline-tag (or 'none').");
+  }
+  const pullRequestNumbers =
+    selected === undefined
+      ? undefined
+      : splitList(selected).map((value) => {
+          if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value)))
+            throw new Error("Invalid pull-request-numbers.");
+          return Number(value);
+        });
+  if (
+    pullRequestNumbers &&
+    (pullRequestNumbers.length === 0 ||
+      new Set(pullRequestNumbers).size !== pullRequestNumbers.length)
+  ) {
+    throw new Error("pull-request-numbers must be nonempty and unique.");
+  }
+  if (publishTag && parseBool(rt.getInput("dry-run"), false))
+    throw new Error("publish-tag cannot be combined with dry-run.");
   return {
+    publishTag,
+    releaseNotes: rt.getInput("release-notes") ?? "",
+    baselineTag,
+    pullRequestNumbers,
     token,
     serverUrl: serverUrl.replace(/\/+$/, ""),
     owner,

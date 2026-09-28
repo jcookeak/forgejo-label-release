@@ -127,3 +127,47 @@ The action self-releases on every push to `main` via `.forgejo/workflows/release
 The workflow builds `dist/` on the `release-artifacts` branch and creates version
 tags from that generated commit. Use a version tag when consuming this action;
 `@main` is not a packaged release.
+
+## Calculate first, publish later
+
+The action is stateless: it creates no plan files or Git commits. Use the existing
+`dry-run` outputs, then pass the chosen tag and notes back when artifacts are ready.
+
+```yaml
+- uses: ./label-release
+  id: version
+  with:
+    token: ${{ secrets.GITHUB_TOKEN }}
+    baseline-tag: v1.4.2
+    pull-request-numbers: "42,43"
+    target-commitish: ${{ github.sha }}
+    major-labels: breaking
+    minor-labels: enhancement
+    patch-labels: bug,dependency,non-functional
+    dry-run: "true"
+
+# The consumer validates and publishes its artifacts here.
+- uses: ./label-release
+  if: steps.version.outputs.tag != ''
+  with:
+    token: ${{ secrets.GITHUB_TOKEN }}
+    publish-tag: ${{ steps.version.outputs.tag }}
+    release-notes: ${{ steps.version.outputs.notes }}
+    target-commitish: ${{ github.sha }}
+```
+
+`baseline-tag` selects a stable baseline explicitly; `none` means no prior release.
+Omit it to preserve normal repository-wide discovery. An explicit baseline lets a
+v1 maintenance branch ignore newer v2 releases. `pull-request-numbers` requires an
+explicit baseline and accepts the merged PRs already verified by the consumer.
+Omit documentation from the impact-label lists to skip documentation-only changes.
+
+`publish-tag` accepts a stable SemVer tag and requires an immutable target commit
+SHA. It uses `release-notes` directly, without recalculating either value. Repeating
+the same publication succeeds; conflicting commits, notes or release flags fail.
+Matching orphan tags and lost successful create responses are reconciled. Existing
+one-step consumers continue to work unchanged.
+
+Consumers must serialize releases and own any artifact recovery. There is no plan
+schema, local release state, artifact metadata format, or special `next` channel in
+this action. Preview aliases belong to the image workflow and storage provider.

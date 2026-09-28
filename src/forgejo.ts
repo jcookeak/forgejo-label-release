@@ -10,6 +10,11 @@ export interface ForgejoClient {
   createRelease(input: CreateReleaseInput): Promise<ReleaseRef>;
 }
 
+export interface ReleasePublisherClient {
+  getReleaseByTag(tag: string): Promise<ReleaseRef | null>;
+  getTagCommit(tag: string): Promise<string | null>;
+}
+
 export interface CreateReleaseInput {
   tagName: string;
   targetCommitish: string;
@@ -23,7 +28,7 @@ interface HttpClient {
   request(method: string, path: string, body?: unknown): Promise<Response>;
 }
 
-export class HttpForgejoClient implements ForgejoClient {
+export class HttpForgejoClient implements ForgejoClient, ReleasePublisherClient {
   constructor(
     private readonly http: HttpClient,
     private readonly owner: string,
@@ -32,6 +37,40 @@ export class HttpForgejoClient implements ForgejoClient {
 
   private path(p: string): string {
     return `/api/v1/repos/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.repo)}${p}`;
+  }
+
+  async getReleaseByTag(tag: string): Promise<ReleaseRef | null> {
+    const res = await this.http.request(
+      "GET",
+      this.path(`/releases/tags/${encodeURIComponent(tag)}`),
+    );
+    if (res.status === 404) return null;
+    await assertOk(res, "get release by tag");
+    const r = (await res.json()) as {
+      id: number;
+      tag_name: string;
+      target_commitish: string;
+      body: string;
+      draft: boolean;
+      prerelease: boolean;
+    };
+    return {
+      id: r.id,
+      tagName: r.tag_name,
+      targetCommitish: r.target_commitish,
+      body: r.body,
+      draft: r.draft,
+      prerelease: r.prerelease,
+    };
+  }
+
+  async getTagCommit(tag: string): Promise<string | null> {
+    const res = await this.http.request("GET", this.path(`/tags/${encodeURIComponent(tag)}`));
+    if (res.status === 404) return null;
+    await assertOk(res, "get tag");
+    const value = (await res.json()) as { commit?: { sha?: string } };
+    if (!value.commit?.sha) throw new Error("Tag lacks an immutable commit SHA.");
+    return value.commit.sha;
   }
 
   async listTags(): Promise<string[]> {
