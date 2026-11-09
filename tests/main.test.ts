@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { run } from "../src/main.ts";
 import type { Runtime } from "../src/runtime.ts";
-import { ForgejoApiError, type ForgejoClient, type CreateReleaseInput } from "../src/forgejo.ts";
+import { type ForgejoClient, type CreateReleaseInput } from "../src/forgejo.ts";
 import type { PullRequestRef, ReleaseRef } from "../src/types.ts";
 
 class FakeRuntime implements Runtime {
@@ -43,8 +43,7 @@ class FakeRuntime implements Runtime {
 interface FakeOptions {
   latestRelease?: ReleaseRef | null;
   tags?: string[];
-  compareCommits?: { sha: string; message: string }[];
-  compareError?: Error;
+  lookupError?: Error;
   prs?: Record<number, PullRequestRef>;
   mergedPulls?: PullRequestRef[];
 }
@@ -55,9 +54,10 @@ function fakeClient(opts: FakeOptions): { client: ForgejoClient; created: Create
     listTags: async () => opts.tags ?? [],
     getLatestRelease: async () => opts.latestRelease ?? null,
     listMergedPullRequests: async () => opts.mergedPulls ?? [],
-    compareCommits: async () => {
-      if (opts.compareError) throw opts.compareError;
-      return opts.compareCommits ?? [];
+    requireCommitPullLookup: async () => {},
+    getCommitPullRequest: async (sha) => {
+      if (opts.lookupError) throw opts.lookupError;
+      return Object.values(opts.prs ?? {}).find((pr) => pr.mergeCommitSha === sha) ?? null;
     },
     getPullRequest: async (n) => {
       const pr = opts.prs?.[n];
@@ -83,129 +83,6 @@ function baseRuntime(): FakeRuntime {
   rt.env["GITHUB_SHA"] = "headsha";
   return rt;
 }
-
-describe("run()", () => {
-  let rt: FakeRuntime;
-  beforeEach(() => {
-    rt = baseRuntime();
-  });
-
-  it("skips the release when no labels match", async () => {
-    const { client, created } = fakeClient({
-      latestRelease: { id: 1, tagName: "v1.0.0", targetCommitish: "old" },
-      compareCommits: [{ sha: "a", message: "chore (#1)" }],
-      prs: {
-        1: {
-          number: 1,
-          title: "chore",
-          author: "a",
-          labels: ["chore"],
-          url: "",
-          mergeCommitSha: "",
-        },
-      },
-    });
-    await run(rt, { clientFactory: () => client });
-    expect(created).toHaveLength(0);
-    expect(rt.outputs["released"]).toBe("false");
-    expect(rt.outputs["bump"]).toBe("none");
-  });
-
-  it("cuts a minor release from v1.2.3 when a feature PR is present", async () => {
-    const { client, created } = fakeClient({
-      latestRelease: { id: 1, tagName: "v1.2.3", targetCommitish: "old" },
-      compareCommits: [
-        { sha: "a", message: "Add endpoint (#10)" },
-        { sha: "b", message: "Fix typo (#11)" },
-      ],
-      prs: {
-        10: {
-          number: 10,
-          title: "Add endpoint",
-          author: "alice",
-          labels: ["feature"],
-          url: "",
-          mergeCommitSha: "",
-        },
-        11: {
-          number: 11,
-          title: "Fix typo",
-          author: "bob",
-          labels: ["bug"],
-          url: "",
-          mergeCommitSha: "",
-        },
-      },
-    });
-    await run(rt, { clientFactory: () => client });
-    expect(created).toHaveLength(1);
-    expect(created[0]?.tagName).toBe("v1.3.0");
-    expect(rt.outputs["released"]).toBe("true");
-    expect(rt.outputs["bump"]).toBe("minor");
-    expect(rt.outputs["previous-tag"]).toBe("v1.2.3");
-  });
-
-  it("dry-run does not call createRelease", async () => {
-    rt.inputs["dry-run"] = "true";
-    const { client, created } = fakeClient({
-      latestRelease: { id: 1, tagName: "v0.1.0", targetCommitish: "old" },
-      compareCommits: [{ sha: "a", message: "bug (#1)" }],
-      prs: {
-        1: { number: 1, title: "bug", author: "a", labels: ["bug"], url: "", mergeCommitSha: "" },
-      },
-    });
-    await run(rt, { clientFactory: () => client });
-    expect(created).toHaveLength(0);
-    expect(rt.outputs["tag"]).toBe("v0.1.1");
-    expect(rt.outputs["released"]).toBe("false");
-  });
-
-  it("falls back to merged PRs since the previous release target when compare is hidden", async () => {
-    const { client, created } = fakeClient({
-      latestRelease: { id: 1, tagName: "v1.2.3", targetCommitish: "previous-release-sha" },
-      compareError: new ForgejoApiError(
-        "compare commits",
-        404,
-        "Not Found",
-        `{"message":"Can't read pulls or can't read UnitTypeCode"}`,
-      ),
-      mergedPulls: [
-        {
-          number: 12,
-          title: "Fix regression",
-          author: "alice",
-          labels: ["bug"],
-          url: "",
-          mergeCommitSha: "new-sha",
-        },
-        {
-          number: 11,
-          title: "Previous release",
-          author: "bob",
-          labels: ["feature"],
-          url: "",
-          mergeCommitSha: "previous-release-sha",
-        },
-        {
-          number: 10,
-          title: "Older change",
-          author: "chris",
-          labels: ["breaking"],
-          url: "",
-          mergeCommitSha: "older-sha",
-        },
-      ],
-    });
-
-    await run(rt, { clientFactory: () => client });
-
-    expect(created).toHaveLength(1);
-    expect(created[0]?.tagName).toBe("v1.2.4");
-    expect(rt.outputs["bump"]).toBe("patch");
-    expect(rt.outputs["notes"]).toContain("Fix regression");
-    expect(rt.outputs["notes"]).not.toContain("Older change");
-  });
-});
 
 describe("explicit release planning", () => {
   const pr: PullRequestRef = {
@@ -235,7 +112,7 @@ describe("explicit release planning", () => {
     client.listMergedPullRequests = async () => {
       throw new Error("must not scan other lines");
     };
-    client.compareCommits = async () => {
+    client.requireCommitPullLookup = async () => {
       throw new Error("selected PRs require no comparison");
     };
     await run(rt, { clientFactory: () => client });
@@ -412,6 +289,150 @@ describe("automatic first-release ancestry", () => {
       const { client, created } = fakeClient({ mergedPulls: [pr(1, merged)] });
       await expect(run(rt, { clientFactory: () => client })).rejects.toThrow(
         /Cannot establish first-release target ancestry.*fetch-depth: 0/,
+      );
+      expect(created).toHaveLength(0);
+    },
+  );
+});
+
+describe("automatic baseline range", () => {
+  let dir: string;
+  let rt: FakeRuntime;
+  let baseline: string;
+  let merge: string;
+  let squash: string;
+  let rebase: string;
+  let target: string;
+  let later: string;
+  let unrelated: string;
+  const git = (...args: string[]) =>
+    execFileSync("git", args, {
+      cwd: dir,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  const commit = (message: string) => {
+    git("commit", "--allow-empty", "-m", message);
+    return git("rev-parse", "HEAD");
+  };
+  const pr = (number: number, sha: string, label = "breaking"): PullRequestRef => ({
+    number,
+    title: `Change ${number}`,
+    author: "alice",
+    labels: [label],
+    url: "",
+    mergeCommitSha: sha,
+  });
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "label-release-range-"));
+    git("init", "-b", "main");
+    git("config", "user.name", "Test");
+    git("config", "user.email", "test@example.invalid");
+    git("config", "commit.gpgsign", "false");
+    baseline = commit("Old source merge");
+    git("checkout", "-b", "old-artifact");
+    commit("Build old artifacts");
+    git("tag", "-a", "v1.2.3", "-m", "Previous artifact release");
+    git("checkout", "main");
+    git("checkout", "-b", "feature");
+    commit("Feature work");
+    git("checkout", "main");
+    git("merge", "--no-ff", "feature", "-m", "Completely custom merge text");
+    merge = git("rev-parse", "HEAD");
+    squash = commit("Custom squash text without a trailer");
+    rebase = commit("Rebased integration result");
+    commit("Misleading ordinary commit (#99)");
+    git("checkout", "-b", "new-artifact");
+    target = commit("Generate new artifacts");
+    git("checkout", "main");
+    later = commit("Later source merge (#99)");
+    git("checkout", "-b", "other-line", baseline);
+    unrelated = commit("Unrelated release line");
+    rt = baseRuntime();
+    rt.env["GITHUB_WORKSPACE"] = dir;
+    rt.inputs["target-commitish"] = target;
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it.each(["release", "tags", "explicit"])(
+    "bounds sibling artifacts using the %s baseline",
+    async (mode) => {
+      if (mode === "explicit") rt.inputs["baseline-tag"] = "v1.2.3";
+      const { client, created } = fakeClient({
+        latestRelease:
+          mode === "release" ? { id: 1, tagName: "v1.2.3", targetCommitish: "main" } : null,
+        tags: ["v1.2.3"],
+        prs: {
+          1: pr(1, baseline),
+          2: pr(2, merge, "bug"),
+          3: pr(3, squash, "feature"),
+          4: pr(4, rebase, "bug"),
+          99: pr(99, later),
+          100: pr(100, unrelated),
+        },
+      });
+      client.listMergedPullRequests = async () => {
+        throw new Error("must not fall back");
+      };
+      await run(rt, { clientFactory: () => client });
+      expect(created).toHaveLength(1);
+      expect(created[0]?.tagName).toBe("v1.3.0");
+      expect(created[0]?.targetCommitish).toBe(target);
+      expect(rt.outputs["previous-tag"]).toBe("v1.2.3");
+      for (const n of [2, 3, 4]) expect(rt.outputs["notes"]).toContain(`Change ${n}`);
+      for (const n of [1, 99, 100]) expect(rt.outputs["notes"]).not.toContain(`Change ${n} (`);
+    },
+  );
+
+  it("skips an empty range", async () => {
+    rt.inputs["baseline-tag"] = "v1.2.3";
+    rt.inputs["target-commitish"] = "v1.2.3";
+    const { client, created } = fakeClient({ prs: { 1: pr(1, baseline) } });
+    client.getCommitPullRequest = async () => {
+      throw new Error("empty range needs no lookups");
+    };
+    await run(rt, { clientFactory: () => client });
+    expect(created).toHaveLength(0);
+    expect(rt.outputs["bump"]).toBe("none");
+  });
+
+  it.each(["no PRs", "no labels", "dry-run"])("does not publish: %s", async (mode) => {
+    rt.inputs["baseline-tag"] = "v1.2.3";
+    if (mode === "dry-run") rt.inputs["dry-run"] = "true";
+    const { client, created } = fakeClient({
+      prs: mode === "no PRs" ? {} : { 2: pr(2, merge, mode === "no labels" ? "chore" : "bug") },
+    });
+    await run(rt, { clientFactory: () => client });
+    expect(created).toHaveLength(0);
+    expect(rt.outputs["released"]).toBe("false");
+    expect(rt.outputs["bump"]).toBe(mode === "dry-run" ? "patch" : "none");
+  });
+
+  it("propagates lookup failures without publishing or scanning repository PRs", async () => {
+    rt.inputs["baseline-tag"] = "v1.2.3";
+    const { client, created } = fakeClient({ lookupError: new Error("network failure") });
+    client.listMergedPullRequests = async () => {
+      throw new Error("must not fall back");
+    };
+    await expect(run(rt, { clientFactory: () => client })).rejects.toThrow("network failure");
+    expect(created).toHaveLength(0);
+  });
+
+  it.each(["baseline", "target", "baseline history", "shallow"])(
+    "fails closed for missing/incomplete %s",
+    async (failure) => {
+      rt.inputs["baseline-tag"] = "v1.2.3";
+      if (failure === "baseline") git("tag", "-d", "v1.2.3");
+      if (failure === "target") rt.inputs["target-commitish"] = "missing";
+      if (failure === "baseline history")
+        rmSync(join(dir, ".git", "objects", baseline.slice(0, 2), baseline.slice(2)));
+      if (failure === "shallow") {
+        git("clone", "--depth=1", "--branch=new-artifact", `file://${dir}`, join(dir, "shallow"));
+        rt.env["GITHUB_WORKSPACE"] = join(dir, "shallow");
+      }
+      const { client, created } = fakeClient({});
+      await expect(run(rt, { clientFactory: () => client })).rejects.toThrow(
+        /Cannot establish release baseline range.*fetch-depth: 0/,
       );
       expect(created).toHaveLength(0);
     },

@@ -2,7 +2,7 @@ import { publishExplicit } from "./publish.ts";
 import type { ReleasePublisherClient } from "./forgejo.ts";
 import { readInputs } from "./inputs.ts";
 import { FetchHttp, HttpForgejoClient, type ForgejoClient } from "./forgejo.ts";
-import { targetAncestors } from "./ancestry.ts";
+import { baselineCommits, targetAncestors } from "./ancestry.ts";
 import { findFirstReleasePrs, findMergedPrs } from "./prs.ts";
 import { applyBump, decideBump, formatSemver, parseSemver, pickLatest } from "./semver.ts";
 import { parseTemplate, renderNotes } from "./release-notes.ts";
@@ -41,9 +41,14 @@ export async function run(rt: Runtime, deps: RunDeps = {}): Promise<void> {
     inputs.pullRequestNumbers !== undefined
       ? await Promise.all(inputs.pullRequestNumbers.map((number) => client.getPullRequest(number)))
       : baseline
-        ? await findMergedPrs(client, baseline.tag, inputs.targetCommitish, {
-            baselineTargetCommitish: baseline.targetCommitish,
-          })
+        ? await findMergedPrs(
+            client,
+            await baselineCommits(
+              baseline.tag,
+              inputs.targetCommitish,
+              rt.getEnv("GITHUB_WORKSPACE"),
+            ),
+          )
         : findFirstReleasePrs(
             await client.listMergedPullRequests(),
             await targetAncestors(inputs.targetCommitish, rt.getEnv("GITHUB_WORKSPACE")),

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as http from "node:http";
 import * as os from "node:os";
@@ -14,7 +15,6 @@ interface RecordedRequest {
 interface MockState {
   latestRelease: unknown;
   tags: { name: string }[];
-  compare: { commits: { sha: string; commit: { message: string } }[] };
   prs: Record<string, unknown>;
   created: RecordedRequest[];
 }
@@ -37,7 +37,17 @@ function startMockServer(state: MockState): Promise<{ url: string; close: () => 
         return json(200, state.latestRelease);
       }
       if (req.method === "GET" && url.includes("/tags")) return json(200, state.tags);
-      if (req.method === "GET" && url.includes("/compare/")) return json(200, state.compare);
+      if (url === "/api/forgejo/v1/version") return json(200, { version: "17.0.0" });
+      if (url === "/api/v1/repos/acme/widgets") return json(200, { permissions: { pull: true } });
+      if (/\/git\/commits\/[a-f0-9]{40}$/.test(url))
+        return json(200, { sha: url.split("/").at(-1) });
+      const commitMatch = /\/commits\/([a-f0-9]{40})\/pull$/.exec(url);
+      if (commitMatch) {
+        const pr = Object.values(state.prs).find(
+          (pr) => (pr as { merge_commit_sha: string }).merge_commit_sha === commitMatch[1],
+        );
+        return json(pr ? 200 : 404, pr ?? { message: "not found" });
+      }
       const prMatch = /\/pulls\/(\d+)$/.exec(url);
       if (req.method === "GET" && prMatch) {
         const pr = state.prs[prMatch[1]!];
@@ -117,15 +127,32 @@ async function main(): Promise<void> {
     `changelog:\n  categories:\n    - title: Features\n      labels: ["feature"]\n    - title: Fixes\n      labels: ["bug"]\n`,
   );
 
+  const git = (...args: string[]) =>
+    execFileSync("git", args, {
+      cwd: tmpDir,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  git("init", "-b", "main");
+  git("config", "user.name", "Test");
+  git("config", "user.email", "test@example.invalid");
+  git("config", "commit.gpgsign", "false");
+  const commit = (message: string) => {
+    git("commit", "--allow-empty", "-m", message);
+    return git("rev-parse", "HEAD");
+  };
+  commit("Old source");
+  git("checkout", "-b", "old-artifact");
+  commit("Old artifacts");
+  git("tag", "v1.2.3");
+  git("checkout", "main");
+  const feature = commit("Custom feature integration");
+  const fix = commit("Rebased fix");
+  const target = commit("Build artifacts (#999)");
+
   const state: MockState = {
     latestRelease: { id: 1, tag_name: "v1.2.3", target_commitish: "oldsha" },
     tags: [{ name: "v1.2.3" }],
-    compare: {
-      commits: [
-        { sha: "a", commit: { message: "Add endpoint (#10)" } },
-        { sha: "b", commit: { message: "Fix typo (#11)" } },
-      ],
-    },
     prs: {
       "10": {
         number: 10,
@@ -133,7 +160,7 @@ async function main(): Promise<void> {
         html_url: "http://x/10",
         user: { login: "alice" },
         labels: [{ name: "feature" }],
-        merge_commit_sha: "a",
+        merge_commit_sha: feature,
         merged: true,
       },
       "11": {
@@ -142,7 +169,7 @@ async function main(): Promise<void> {
         html_url: "http://x/11",
         user: { login: "bob" },
         labels: [{ name: "bug" }],
-        merge_commit_sha: "b",
+        merge_commit_sha: fix,
         merged: true,
       },
     },
@@ -162,7 +189,8 @@ async function main(): Promise<void> {
         GITHUB_TOKEN: "smoke-token",
         GITHUB_SERVER_URL: server.url,
         GITHUB_REPOSITORY: "acme/widgets",
-        GITHUB_SHA: "headsha",
+        GITHUB_SHA: target,
+        GITHUB_WORKSPACE: tmpDir,
       },
     );
     await run(rt);

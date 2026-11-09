@@ -2,7 +2,7 @@
 
 A Forgejo action that cuts a new semver release based on the labels of pull requests merged since the previous release.
 
-- Walks the commits between the previous release tag and the current commit, extracts the PR numbers, and fetches each PR's labels.
+- Walks the commits between the previous release tag and the current commit, looks up their recorded Forgejo PRs, and reads each PR's labels.
 - Picks the highest-priority bump that matches: `major` > `minor` > `patch`. If no labels match any of the configured lists, the action **skips** the release.
 - Creates the tag and release in one step via Forgejo's release API. Optionally renders release notes from a GitHub-style `release.yml` template.
 
@@ -64,19 +64,20 @@ jobs:
 ## Bump rules
 
 1. Discover the baseline: latest non-prerelease release, or the highest-semver tag if no release exists, or `v0.0.0` if neither.
-2. Walk the commits between the baseline tag and `target-commitish`. Extract PR numbers from squash-merge trailers (`… (#N)`) and merge commits (`Merge pull request #N`). If there is no baseline (including `baseline-tag: none`), only merged PRs whose merge SHA is reachable from `target-commitish` are considered, using the local Git history.
+2. Walk the exact local Git range `baseline-tag..target-commitish`. Look up each full SHA through Forgejo's commit-to-PR endpoint and deduplicate PRs. Ordinary commits are ignored; commit messages are never parsed. If there is no baseline (including `baseline-tag: none`), only merged PRs whose merge SHA is reachable from `target-commitish` are considered, using the local Git history.
 3. Collect the labels of every PR. Pick the highest matching bump (major → minor → patch). Label matching is case-insensitive.
 4. If nothing matches, exit with `released=false` and `bump=none`. Otherwise apply the bump to the baseline and create the release.
 
-### First-release checkout requirements
+### Automatic discovery checkout requirements
 
-Automatic discovery without a baseline requires Git on `PATH` and a checkout of
+Automatic discovery requires Git on `PATH` and a checkout of
 `repository` in `$GITHUB_WORKSPACE` (or the current working directory outside
 Actions). Use `actions/checkout` with `fetch-depth: 0`, and ensure the requested
-`target-commitish` is available locally. For a branch name, the local branch must
+`target-commitish` and baseline tag (when present) are available locally, with both
+complete histories. For a branch name, the local branch must
 point at the intended commit; an immutable SHA avoids ambiguity.
 
-The action walks the target's complete ancestry, including the target itself, and
+Without a baseline, the action walks the target's complete ancestry, including the target itself, and
 matches Forgejo PR merge SHAs against it. A generated artifact/build commit works
 when it descends from the source history. PRs on unrelated branches and PRs merged
 after the target are excluded even if their labels would request a larger bump.
@@ -85,8 +86,37 @@ messages or on the target itself being a PR merge commit.
 
 Missing targets, shallow checkouts, unreadable history, and merged PRs with missing
 or invalid merge SHAs fail with an error; discovery never falls back to every PR.
-No automatic fetch is performed. Explicit `pull-request-numbers` selection and
-existing-baseline discovery do not require this local ancestry check.
+No automatic fetch is performed. Explicit `pull-request-numbers` selection does
+not require local ancestry or the commit-to-PR endpoint.
+
+With a baseline, discovery uses commits reachable from the target but not from
+the baseline **tag**, including all parent paths. Release `target_commitish`
+metadata (which can be a moving branch) does not define the baseline boundary.
+Old and current artifact commits can be siblings off source history: old source
+ancestors are excluded, new source merges are included, and unassociated artifact
+commits are ignored. No special parent inference or merge-time ordering is used.
+Missing history fails instead of returning a truncated range.
+
+Baseline discovery requires **Forgejo 17 or newer** and repository/code read
+access. It checks the Forgejo version and repository access, then calls
+`GET /api/v1/repos/{owner}/{repo}/commits/{sha}/pull` in the PR's base repository.
+This returns one PR for the exact stored merge-result SHA, including recorded
+squash/rebase results. It does not identify arbitrary PR member commits, externally
+merged PRs without a recorded association, or every PR if several share one SHA.
+
+A lookup 404 is accepted as no association only after the same commit can be read
+through the repository's Git API. Push generated artifact commits before discovery;
+a local-only commit, wrong repository, or inaccessible code must fail. Authentication,
+network and other API errors propagate. Unsupported versions fail explicitly;
+there is no fallback to message parsing or repository-wide PRs. A server/proxy
+that advertises a supported version but hides only the lookup route behind 404
+cannot be distinguished from missing associations; the standard Forgejo API routes
+must be exposed unchanged.
+
+The Forgejo 17 [compare handler](https://codeberg.org/forgejo/forgejo/src/tag/v17.0.0/routers/api/v1/repo/compare.go)
+uses PR comparison machinery and offers no pagination parameter or continuation
+contract. Local complete ancestry avoids depending on compare response completeness
+or compare-route permissions for release membership.
 
 ## Release notes template
 
@@ -135,8 +165,8 @@ src/
   runtime.ts        Runtime abstraction + ActionRuntime (inputs/outputs/logs/files)
   inputs.ts         parse + validate action inputs
   forgejo.ts        ForgejoClient interface + HTTP implementation
-  prs.ts            commit-walk and merge-SHA PR discovery
-  ancestry.ts       complete local target history for first releases
+  prs.ts            exact commit association and merge-SHA PR discovery
+  ancestry.ts       complete local history and baseline reachable-set difference
   semver.ts         parseSemver / applyBump / decideBump / pickLatest
   release-notes.ts  parseTemplate + renderNotes
   types.ts          shared types

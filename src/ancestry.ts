@@ -27,3 +27,22 @@ export async function targetAncestors(target: string, cwd?: string): Promise<Set
     );
   }
 }
+
+/** Exact reachable-set difference, including side branches and sibling artifact heads. */
+export async function baselineCommits(
+  baseTag: string,
+  target: string,
+  cwd?: string,
+): Promise<string[]> {
+  try {
+    const baseline = await targetAncestors(`refs/tags/${baseTag}`, cwd);
+    const head = await targetAncestors(target, cwd);
+    return [...head].filter((sha) => !baseline.has(sha));
+  } catch (err) {
+    throw new Error(
+      "Cannot establish release baseline range. Check out the release repository with " +
+        "fetch-depth: 0 and ensure the baseline tag, target-commitish and both complete histories are available locally.",
+      { cause: err },
+    );
+  }
+}

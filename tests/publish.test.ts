@@ -28,7 +28,10 @@ function fake() {
     listMergedPullRequests: async () => {
       throw new Error("must not recalculate");
     },
-    compareCommits: async () => {
+    requireCommitPullLookup: async () => {
+      throw new Error("must not recalculate");
+    },
+    getCommitPullRequest: async () => {
       throw new Error("must not recalculate");
     },
     getPullRequest: async () => {

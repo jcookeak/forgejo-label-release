@@ -3,7 +3,8 @@ import type { PullRequestRef, ReleaseRef } from "./types.ts";
 export interface ForgejoClient {
   listTags(): Promise<string[]>;
   getLatestRelease(): Promise<ReleaseRef | null>;
-  compareCommits(base: string, head: string): Promise<{ sha: string; message: string }[]>;
+  requireCommitPullLookup(): Promise<void>;
+  getCommitPullRequest(sha: string): Promise<PullRequestRef | null>;
   getPullRequest(number: number): Promise<PullRequestRef>;
   /** Merged PRs in descending merge-time order, across all pages. */
   listMergedPullRequests(): Promise<PullRequestRef[]>;
@@ -96,14 +97,65 @@ export class HttpForgejoClient implements ForgejoClient, ReleasePublisherClient 
     return { id: r.id, tagName: r.tag_name, targetCommitish: r.target_commitish };
   }
 
-  async compareCommits(base: string, head: string): Promise<{ sha: string; message: string }[]> {
-    const res = await this.http.request(
-      "GET",
-      this.path(`/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`),
-    );
-    await assertOk(res, "compare commits");
-    const data = (await res.json()) as { commits?: { sha: string; commit: { message: string } }[] };
-    return (data.commits ?? []).map((c) => ({ sha: c.sha, message: c.commit.message }));
+  async requireCommitPullLookup(): Promise<void> {
+    const res = await this.http.request("GET", "/api/forgejo/v1/version");
+    await assertOk(res, "check Forgejo commit-to-PR lookup support");
+    const data = (await res.json()) as { version?: string };
+    const major = /^(\d+)\./.exec(data.version ?? "")?.[1];
+    if (!major || Number(major) < 17) {
+      throw new Error("Automatic baseline discovery requires Forgejo 17 or newer.");
+    }
+    // Check repository access even when the local range is empty.
+    const repo = await this.http.request("GET", this.path(""));
+    await assertOk(repo, "check release repository access");
+    const info = (await repo.json()) as { permissions?: { pull?: boolean }; empty?: boolean };
+    if (info.empty || info.permissions?.pull === false) {
+      throw new Error("Release repository is empty or code is not readable.");
+    }
+  }
+
+  async getCommitPullRequest(sha: string): Promise<PullRequestRef | null> {
+    if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(sha)) {
+      throw new Error("Commit-to-PR lookup requires a full commit SHA.");
+    }
+    const res = await this.http.request("GET", this.path(`/commits/${sha}/pull`));
+    if (res.status === 404) {
+      // A 404 can also hide an inaccessible repo/code unit or a wrong checkout.
+      // Confirm this exact commit is readable before treating it as an ordinary commit.
+      const commit = await this.http.request("GET", this.path(`/git/commits/${sha}`));
+      await assertOk(commit, `verify unmatched commit ${sha}`);
+      const data = (await commit.json()) as { sha?: string };
+      if (data.sha?.toLowerCase() !== sha.toLowerCase()) {
+        throw new Error(`Cannot verify unmatched commit ${sha} in the release repository.`);
+      }
+      return null;
+    }
+    await assertOk(res, `get PR for commit ${sha}`);
+    const pr = (await res.json()) as {
+      number: number;
+      title: string;
+      html_url: string;
+      user: { login: string } | null;
+      labels: { name: string }[];
+      merge_commit_sha: string;
+      merged: boolean;
+    };
+    if (
+      !pr.merged ||
+      pr.merge_commit_sha?.toLowerCase() !== sha.toLowerCase() ||
+      !Number.isSafeInteger(pr.number) ||
+      pr.number <= 0
+    ) {
+      throw new Error(`Invalid commit-to-PR response for ${sha}.`);
+    }
+    return {
+      number: pr.number,
+      title: pr.title,
+      author: pr.user?.login ?? "",
+      labels: pr.labels.map((label) => label.name),
+      url: pr.html_url,
+      mergeCommitSha: pr.merge_commit_sha,
+    };
   }
 
   async getPullRequest(number: number): Promise<PullRequestRef> {
