@@ -61,6 +61,11 @@ jobs:
 | `bump`         | `major`, `minor`, `patch`, or `none`.                |
 | `notes`        | The rendered release notes.                          |
 
+The runner must provide a writable `GITHUB_OUTPUT` file (or `FORGEJO_OUTPUT`
+as a fallback). The entry point checks this before release processing; legacy
+stdout output commands are not supported. See [SECURITY.md](SECURITY.md) for
+workflow trust boundaries and safe runner configuration.
+
 ## Bump rules
 
 1. Discover the baseline: latest non-prerelease release, or the highest-semver tag if no release exists, or `v0.0.0` if neither.

@@ -1,11 +1,24 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "hostRules": [
+    {
+      "matchHost": "git.homelab.cooke-akaiwa.com",
+      "hostType": "gitea"
+    }
+  ],
   "gitIgnoredAuthors": [
     "forgejo-actions[bot] <forgejo-actions[bot]@users.noreply.forgejo.org>",
     "forgejo-actions[bot]@users.noreply.forgejo.org"
   ],
   "packageRules": [
+    {
+      "description": "Resolve shorthand action pins against the Forgejo action source",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["actions/**", "custom-actions/**"],
+      "overrideDatasource": "gitea-tags",
+      "registryUrls": ["https://git.homelab.cooke-akaiwa.com"]
+    },
     {
       "matchPackageNames": ["custom-actions/label-check"],
       "dependencyDashboardApproval": true

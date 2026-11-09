@@ -11,6 +11,9 @@ name: OTel DAG Test
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   setup:
     runs-on: xsmall
@@ -31,10 +34,15 @@ jobs:
     steps:
       # checkout is a docker'd JS action — its stdout must bind to this
       # step's span (the SpanId fix), not the root workflow span.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: build
+        env:
+          ARCH: ${{ matrix.arch }}
+          FLAVOR: ${{ matrix.flavor }}
         run: |
-          echo "building arch=${{ matrix.arch }} flavor=${{ matrix.flavor }}"
+          echo "building arch=$ARCH flavor=$FLAVOR"
           echo "matrix cell second line"
 
   package:

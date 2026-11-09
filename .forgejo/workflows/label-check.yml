@@ -10,10 +10,8 @@ jobs:
     permissions:
       pull-requests: read
     steps:
-      - uses: actions/checkout@v7
-
       - name: Enforce PR label
-        uses: custom-actions/label-check@v0.1.10
+        uses: custom-actions/label-check@db47e421ebd013c7dcd89f91d891c0a8ae83a5b0 # v0.1.10
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           mode: at-least-one

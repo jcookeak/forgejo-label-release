@@ -9,12 +9,15 @@ jobs:
     runs-on: xsmall
     permissions:
       contents: write
+      pull-requests: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
 
@@ -23,6 +26,8 @@ jobs:
 
       - name: Publish release artifacts branch
         id: artifacts
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           git config user.name "forgejo-actions[bot]"
@@ -31,12 +36,13 @@ jobs:
           if ! git diff --cached --quiet; then
             git commit -m "chore: build release artifacts for ${GITHUB_SHA::12}"
           fi
-          git push --force origin "HEAD:release-artifacts"
+          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')"
+          git -c "http.extraHeader=AUTHORIZATION: basic $auth" push --force origin "HEAD:refs/heads/release-artifacts"
           echo "sha=$(git rev-parse HEAD)" >> "$FORGEJO_OUTPUT"
 
       - name: Cut release
         id: release
-        uses: custom-actions/label-release@v0.0.16
+        uses: custom-actions/label-release@d8b890e0623119d3d0405ffd65eedf5fc0875e2c # v0.0.16
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           release-template: .forgejo/release.yml
@@ -49,31 +55,28 @@ jobs:
         if: steps.release.outputs.released == 'true'
         env:
           TAG: ${{ steps.release.outputs.tag }}
+          ARTIFACT_SHA: ${{ steps.artifacts.outputs.sha }}
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
-          if ! [[ "$TAG" =~ ^v?([0-9]+)\.([0-9]+)\.([0-9]+)(-.+)?$ ]]; then
-            echo "::notice::Tag '$TAG' is not a plain semver tag — skipping floating tags."
+          if ! [[ "$TAG" =~ ^(v?)(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::notice::Not a stable semver tag — skipping floating tags."
             exit 0
           fi
-          if [[ -n "${BASH_REMATCH[4]:-}" ]]; then
-            echo "::notice::Tag '$TAG' is a prerelease — skipping floating tags."
-            exit 0
-          fi
-
-          prefix=""
-          [[ "$TAG" == v* ]] && prefix="v"
-          major="${prefix}${BASH_REMATCH[1]}"
-          minor="${prefix}${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+          major="${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
+          minor="${major}.${BASH_REMATCH[3]}"
+          [[ "$ARTIFACT_SHA" =~ ^[0-9a-fA-F]{40}$ ]]
+          git cat-file -e "$ARTIFACT_SHA^{commit}"
+          sha="$ARTIFACT_SHA"
 
           git config user.name "forgejo-actions[bot]"
           git config user.email "forgejo-actions[bot]@users.noreply.forgejo.org"
 
-          remote="https://x-access-token:${TOKEN}@${GITHUB_SERVER_URL#https://}/${GITHUB_REPOSITORY}.git"
+          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')"
 
           for floating in "$major" "$minor"; do
-            echo "Updating $floating -> ${{ steps.artifacts.outputs.sha }}"
-            git tag -f "$floating" "${{ steps.artifacts.outputs.sha }}"
-            git push -f "$remote" "refs/tags/$floating"
+            echo "Updating $floating -> $sha"
+            git tag -f "$floating" "$sha"
+            git -c "http.extraHeader=AUTHORIZATION: basic $auth" push -f origin "refs/tags/$floating"
           done
