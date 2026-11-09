@@ -1,15 +1,8 @@
 import { spawnSync } from "node:child_process";
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-  mkdirSync,
-} from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseDocument } from "yaml";
 
@@ -85,10 +78,14 @@ function runStep(
   context: Record<string, string> = {},
   extraEnv: Record<string, string> = {},
 ) {
+  for (const path of ["scripts", "src"])
+    if (!existsSync(join(cwd, path)))
+      symlinkSync(fileURLToPath(new URL(`../${path}`, import.meta.url)), join(cwd, path));
   return spawnSync("bash", ["-c", render(entry.run!, context)], {
     cwd,
     env: {
       ...environment,
+      FORGEJO_OUTPUT: join(cwd, "output"),
       ...Object.fromEntries(
         Object.entries(entry.env ?? {}).map(([key, value]) => [key, render(value, context)]),
       ),
@@ -139,6 +136,7 @@ describe("hostile event metadata", () => {
   it("uses the published tag's commit even when target_commitish is a hostile or moving branch", () => {
     const { cwd, remote, sha } = repository();
     git(cwd, "tag", "-a", "v1.2.3", "-m", "released", sha);
+    git(cwd, "push", "origin", "refs/tags/v1.2.3");
     git(cwd, "commit", "--allow-empty", "-m", "later branch tip");
     git(cwd, "branch", hostileBranch);
     const result = runStep(step("floating-tags.yml", "Move floating tags"), cwd, {
@@ -151,48 +149,6 @@ describe("hostile event metadata", () => {
     expect(
       git(cwd, "--git-dir", remote, "rev-parse", "refs/tags/v1", "refs/tags/v1.2").split("\n"),
     ).toEqual([sha, sha]);
-    expect(readFileSync(join(cwd, ".git/config"), "utf8")).not.toMatch(
-      /test-only-token|extraheader/i,
-    );
-  });
-
-  it("publishes generated artifact ancestry and moves floating tags without persisted credentials", () => {
-    const { cwd, remote, sha } = repository();
-    mkdirSync(join(cwd, "dist"));
-    writeFileSync(join(cwd, "dist/index.js"), "// generated artifact\n");
-    const output = join(cwd, "output");
-    const publish = runStep(
-      step("release.yml", "Publish release artifacts branch"),
-      cwd,
-      tokenContext,
-      {
-        GITHUB_SHA: sha,
-        FORGEJO_OUTPUT: output,
-      },
-    );
-    expect(publish.status, publish.stderr).toBe(0);
-    const artifact = readFileSync(output, "utf8").trim().slice("sha=".length);
-    expect(artifact).toMatch(/^[a-f0-9]{40}$/);
-    expect(git(cwd, "--git-dir", remote, "rev-parse", "refs/heads/release-artifacts")).toBe(
-      artifact,
-    );
-    expect(git(cwd, "rev-parse", `${artifact}^`)).toBe(sha);
-    expect(git(cwd, "--git-dir", remote, "show", `${artifact}:dist/index.js`)).toBe(
-      "// generated artifact",
-    );
-    const context = {
-      ...tokenContext,
-      "steps.release.outputs.tag": "v2.3.4",
-      "steps.artifacts.outputs.sha": artifact,
-    };
-    const moved = runStep(step("release.yml", "Move floating tags"), cwd, context);
-    expect(moved.status, moved.stderr).toBe(0);
-    expect(
-      git(cwd, "--git-dir", remote, "rev-parse", "refs/tags/v2", "refs/tags/v2.3").split("\n"),
-    ).toEqual([artifact, artifact]);
-    context["steps.artifacts.outputs.sha"] = hostileBranch;
-    expect(runStep(step("release.yml", "Move floating tags"), cwd, context).status).not.toBe(0);
-    expect(existsSync(join(cwd, "PWNED"))).toBe(false);
     expect(readFileSync(join(cwd, ".git/config"), "utf8")).not.toMatch(
       /test-only-token|extraheader/i,
     );

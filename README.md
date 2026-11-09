@@ -179,10 +179,56 @@ tests/              unit tests per module + main() with a fake client
 scripts/smoke.ts    spins up a mock Forgejo server and exercises the full flow
 ```
 
-The action self-releases on every push to `main` via `.forgejo/workflows/release.yml`.
-The workflow builds `dist/` on the `release-artifacts` branch and creates version
-tags from that generated commit. Use a version tag when consuming this action;
-`@main` is not a packaged release.
+### Repository self-release and mirrors
+
+The action self-releases on pushes to `main` via `.forgejo/workflows/release.yml`.
+After building, the workflow runs the **local built action** in `dry-run` mode at
+the immutable source SHA. This preserves the complete source range for PR discovery.
+No matching bump means no branch, tag or release writes.
+
+For a planned `vX.Y.Z`, the workflow creates `releases/vX.Y.Z` with a single build
+commit directly above that source SHA, containing generated `dist/` and
+`.forgejo/self-release-plan.json`. This repository-specific metadata records the
+source, exact version, notes, bump and baseline. The local action then publishes
+that exact plan at the artifact SHA with `publish-tag`; floating `vX` and `vX.Y`
+tags move only after successful publication. Source `main` stays free of build
+commits. Use a version tag when consuming the action; `@main` is not packaged.
+
+Mirror **both branch and tag refs**: `refs/heads/main`, `refs/heads/releases/*`,
+and `refs/tags/*`. Mirroring release branches alone does not mirror version or
+floating tags. Configure the destination to accept floating tag updates. Existing
+`release-artifacts`, historical commits and version tags remain intact; this is
+an additive layout change, with no migration rewrite or deletion.
+
+Forgejo 17 supports workflow-level `concurrency`. Both publication workflows use
+one repository-wide group with `cancel-in-progress: false`. The instance must keep
+`[actions].CONCURRENCY_GROUP_QUEUE_ENABLED = true` (the default); this is implemented
+in Forgejo's [workflow concurrency handling](https://codeberg.org/forgejo/forgejo/src/tag/v17.0.0/services/actions/workflows.go)
+and [instance configuration](https://codeberg.org/forgejo/forgejo/src/tag/v17.0.0/modules/setting/actions.go).
+This serialization covers planning through floating tags. Administrators must
+preserve that setting and serialize any manual publishers with these workflows;
+YAML cannot enforce instance settings or lock out external writers.
+
+Retries must rerun the **same source SHA**. Before recalculating anything, the
+workflow finds that source's version branch and recovers its original plan,
+including after a successful publication whose response was lost. It rebuilds and
+compares the entire artifact tree and the exact single source parent. Matching
+contents reuse the existing commit despite different build-commit timestamps.
+Changed artifacts, notes, ancestry, malformed metadata, or multiple plans for one
+source fail for manual reconciliation. A failed build before a branch exists has
+not reserved a version. Recover failed publications before advancing to newer
+sources; do not relabel PRs or delete branches/tags to manufacture another version.
+
+Version branches use an **absent-ref lease**: even a fast-forward cannot overwrite
+an existing version branch. A creation race loser fails without publishing; rerun
+it to reconcile a matching winner. The release API rejects conflicting version
+tags/releases. Git push and release creation are separate operations: failure may
+leave a recoverable branch, an orphan version tag, or a published release awaiting
+aliases. There is no automatic deletion or rollback. Resolve conflicts explicitly;
+do not force-push a version branch. Aliases use compare-and-swap pushes, skip an
+older version when a newer version tag exists in the same alias series, and may
+be partially updated if one push fails; rerunning completes them. These guards
+limit race damage but do not replace the queue or serialize API and Git writes.
 
 ## Calculate first, publish later
 

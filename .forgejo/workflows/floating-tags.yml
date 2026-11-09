@@ -4,6 +4,11 @@ on:
   release:
     types: [published]
 
+# Share the publication queue with the self-release workflow.
+concurrency:
+  group: label-release-self-release
+  cancel-in-progress: false
+
 jobs:
   update:
     runs-on: xsmall
@@ -14,34 +19,16 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: refs/tags/${{ github.event.release.tag_name }}
+          # Legacy release tags predate the helper; use trusted main plumbing.
+          # The helper resolves the published tag itself, never target_commitish.
+          ref: main
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
 
       - name: Move floating tags
         env:
           TAG: ${{ github.event.release.tag_name }}
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-
-          if ! [[ "$TAG" =~ ^(v?)(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "::notice::Not a stable semver tag — skipping floating tags."
-            exit 0
-          fi
-          major="${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
-          minor="${major}.${BASH_REMATCH[3]}"
-          # target_commitish can be a branch that has moved since publication.
-          # The released tag is authoritative; resolve it to an immutable commit.
-          git check-ref-format "refs/tags/$TAG"
-          sha="$(git rev-parse --verify "refs/tags/$TAG^{commit}")"
-          [[ "$sha" =~ ^[0-9a-fA-F]{40}$ ]]
-
-          git config user.name "forgejo-actions[bot]"
-          git config user.email "forgejo-actions[bot]@users.noreply.forgejo.org"
-
-          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')"
-
-          for floating in "$major" "$minor"; do
-            echo "Updating $floating -> $sha"
-            git tag -f "$floating" "$sha"
-            git -c "http.extraHeader=AUTHORIZATION: basic $auth" push -f origin "refs/tags/$floating"
-          done
+        run: node scripts/self-release.ts floating

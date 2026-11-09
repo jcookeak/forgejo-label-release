@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
 
+# Forgejo 17 supports workflow concurrency queues. The instance setting
+# [actions].CONCURRENCY_GROUP_QUEUE_ENABLED must remain enabled (default: true).
+concurrency:
+  group: label-release-self-release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: xsmall
@@ -21,35 +27,50 @@ jobs:
         with:
           node-version: "24"
 
+      # Build before using the local action, including its explicit publish API.
       - name: Build release artifacts
         run: npm ci && npm run build
 
-      - name: Publish release artifacts branch
-        id: artifacts
+      - name: Recover source release plan
+        id: recover
         env:
+          SOURCE_SHA: ${{ github.sha }}
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          git config user.name "forgejo-actions[bot]"
-          git config user.email "forgejo-actions[bot]@users.noreply.forgejo.org"
-          git add -f dist/
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: build release artifacts for ${GITHUB_SHA::12}"
-          fi
-          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')"
-          git -c "http.extraHeader=AUTHORIZATION: basic $auth" push --force origin "HEAD:refs/heads/release-artifacts"
-          echo "sha=$(git rev-parse HEAD)" >> "$FORGEJO_OUTPUT"
+        run: node scripts/self-release.ts recover
 
-      - name: Cut release
-        id: release
-        uses: custom-actions/label-release@d8b890e0623119d3d0405ffd65eedf5fc0875e2c # v0.0.16
+      - name: Plan release from source
+        if: steps.recover.outputs.recovered != 'true'
+        id: version
+        uses: ./
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          target-commitish: ${{ github.sha }}
           release-template: .forgejo/release.yml
-          target-commitish: ${{ steps.artifacts.outputs.sha }}
           major-labels: breaking
           minor-labels: enhancement
           patch-labels: bug, dependency
+          dry-run: "true"
+
+      - name: Publish version artifacts branch
+        id: artifacts
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          TAG: ${{ steps.recover.outputs.tag || steps.version.outputs.tag }}
+          NOTES: ${{ steps.recover.outputs.notes || steps.version.outputs.notes }}
+          BUMP: ${{ steps.recover.outputs.bump || steps.version.outputs.bump }}
+          PREVIOUS_TAG: ${{ steps.recover.outputs.previous-tag || steps.version.outputs.previous-tag }}
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/self-release.ts artifacts
+
+      - name: Publish planned release
+        if: steps.artifacts.outputs.sha != ''
+        id: release
+        uses: ./
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          publish-tag: ${{ steps.artifacts.outputs.tag }}
+          release-notes: ${{ steps.artifacts.outputs.notes }}
+          target-commitish: ${{ steps.artifacts.outputs.sha }}
 
       - name: Move floating tags
         if: steps.release.outputs.released == 'true'
@@ -57,26 +78,4 @@ jobs:
           TAG: ${{ steps.release.outputs.tag }}
           ARTIFACT_SHA: ${{ steps.artifacts.outputs.sha }}
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-
-          if ! [[ "$TAG" =~ ^(v?)(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "::notice::Not a stable semver tag — skipping floating tags."
-            exit 0
-          fi
-          major="${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
-          minor="${major}.${BASH_REMATCH[3]}"
-          [[ "$ARTIFACT_SHA" =~ ^[0-9a-fA-F]{40}$ ]]
-          git cat-file -e "$ARTIFACT_SHA^{commit}"
-          sha="$ARTIFACT_SHA"
-
-          git config user.name "forgejo-actions[bot]"
-          git config user.email "forgejo-actions[bot]@users.noreply.forgejo.org"
-
-          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')"
-
-          for floating in "$major" "$minor"; do
-            echo "Updating $floating -> $sha"
-            git tag -f "$floating" "$sha"
-            git -c "http.extraHeader=AUTHORIZATION: basic $auth" push -f origin "refs/tags/$floating"
-          done
+        run: node scripts/self-release.ts floating
