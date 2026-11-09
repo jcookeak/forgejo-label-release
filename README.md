@@ -64,9 +64,29 @@ jobs:
 ## Bump rules
 
 1. Discover the baseline: latest non-prerelease release, or the highest-semver tag if no release exists, or `v0.0.0` if neither.
-2. Walk the commits between the baseline tag and `target-commitish`. Extract PR numbers from squash-merge trailers (`… (#N)`) and merge commits (`Merge pull request #N`). If there is no baseline, every merged PR is considered.
+2. Walk the commits between the baseline tag and `target-commitish`. Extract PR numbers from squash-merge trailers (`… (#N)`) and merge commits (`Merge pull request #N`). If there is no baseline (including `baseline-tag: none`), only merged PRs whose merge SHA is reachable from `target-commitish` are considered, using the local Git history.
 3. Collect the labels of every PR. Pick the highest matching bump (major → minor → patch). Label matching is case-insensitive.
 4. If nothing matches, exit with `released=false` and `bump=none`. Otherwise apply the bump to the baseline and create the release.
+
+### First-release checkout requirements
+
+Automatic discovery without a baseline requires Git on `PATH` and a checkout of
+`repository` in `$GITHUB_WORKSPACE` (or the current working directory outside
+Actions). Use `actions/checkout` with `fetch-depth: 0`, and ensure the requested
+`target-commitish` is available locally. For a branch name, the local branch must
+point at the intended commit; an immutable SHA avoids ambiguity.
+
+The action walks the target's complete ancestry, including the target itself, and
+matches Forgejo PR merge SHAs against it. A generated artifact/build commit works
+when it descends from the source history. PRs on unrelated branches and PRs merged
+after the target are excluded even if their labels would request a larger bump.
+No matching PRs means no release. This does not depend on PR numbers in commit
+messages or on the target itself being a PR merge commit.
+
+Missing targets, shallow checkouts, unreadable history, and merged PRs with missing
+or invalid merge SHAs fail with an error; discovery never falls back to every PR.
+No automatic fetch is performed. Explicit `pull-request-numbers` selection and
+existing-baseline discovery do not require this local ancestry check.
 
 ## Release notes template
 
@@ -115,7 +135,8 @@ src/
   runtime.ts        Runtime abstraction + ActionRuntime (inputs/outputs/logs/files)
   inputs.ts         parse + validate action inputs
   forgejo.ts        ForgejoClient interface + HTTP implementation
-  prs.ts            commit-walk PR discovery
+  prs.ts            commit-walk and merge-SHA PR discovery
+  ancestry.ts       complete local target history for first releases
   semver.ts         parseSemver / applyBump / decideBump / pickLatest
   release-notes.ts  parseTemplate + renderNotes
   types.ts          shared types
@@ -157,7 +178,7 @@ The action is stateless: it creates no plan files or Git commits. Use the existi
 ```
 
 `baseline-tag` selects a stable baseline explicitly; `none` means no prior release.
-Omit it to preserve normal repository-wide discovery. An explicit baseline lets a
+Omit it to discover the baseline from repository releases and tags. An explicit baseline lets a
 v1 maintenance branch ignore newer v2 releases. `pull-request-numbers` requires an
 explicit baseline and accepts the merged PRs already verified by the consumer.
 Omit documentation from the impact-label lists to skip documentation-only changes.

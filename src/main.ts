@@ -2,11 +2,12 @@ import { publishExplicit } from "./publish.ts";
 import type { ReleasePublisherClient } from "./forgejo.ts";
 import { readInputs } from "./inputs.ts";
 import { FetchHttp, HttpForgejoClient, type ForgejoClient } from "./forgejo.ts";
-import { findMergedPrs } from "./prs.ts";
+import { targetAncestors } from "./ancestry.ts";
+import { findFirstReleasePrs, findMergedPrs } from "./prs.ts";
 import { applyBump, decideBump, formatSemver, parseSemver, pickLatest } from "./semver.ts";
 import { parseTemplate, renderNotes } from "./release-notes.ts";
 import type { Runtime } from "./runtime.ts";
-import type { Inputs, PullRequestRef, ReleaseTemplate, SemVer } from "./types.ts";
+import type { Inputs, ReleaseTemplate, SemVer } from "./types.ts";
 
 export interface RunDeps {
   clientFactory?: (inputs: Inputs) => ForgejoClient;
@@ -43,7 +44,10 @@ export async function run(rt: Runtime, deps: RunDeps = {}): Promise<void> {
         ? await findMergedPrs(client, baseline.tag, inputs.targetCommitish, {
             baselineTargetCommitish: baseline.targetCommitish,
           })
-        : await client.listMergedPullRequests();
+        : findFirstReleasePrs(
+            await client.listMergedPullRequests(),
+            await targetAncestors(inputs.targetCommitish, rt.getEnv("GITHUB_WORKSPACE")),
+          );
 
   rt.info(`Found ${prs.length} PR(s) since ${baseline?.tag ?? "the beginning"}.`);
 

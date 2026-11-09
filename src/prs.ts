@@ -60,3 +60,18 @@ function prsSinceBaselineTarget(
   const baselineIndex = prs.findIndex((pr) => pr.mergeCommitSha === baselineTargetCommitish);
   return baselineIndex === -1 ? prs : prs.slice(0, baselineIndex);
 }
+
+/** With complete target history, absent SHAs are definitively not ancestors. */
+export function findFirstReleasePrs(
+  prs: PullRequestRef[],
+  ancestors: ReadonlySet<string>,
+): PullRequestRef[] {
+  return prs.filter((pr) => {
+    if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(pr.mergeCommitSha)) {
+      throw new Error(
+        `Cannot establish first-release ancestry for PR #${pr.number}: missing or invalid merge commit SHA.`,
+      );
+    }
+    return ancestors.has(pr.mergeCommitSha.toLowerCase());
+  });
+}

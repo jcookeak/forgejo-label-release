@@ -1,4 +1,8 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { run } from "../src/main.ts";
 import type { Runtime } from "../src/runtime.ts";
 import { ForgejoApiError, type ForgejoClient, type CreateReleaseInput } from "../src/forgejo.ts";
@@ -139,25 +143,6 @@ describe("run()", () => {
     expect(rt.outputs["released"]).toBe("true");
     expect(rt.outputs["bump"]).toBe("minor");
     expect(rt.outputs["previous-tag"]).toBe("v1.2.3");
-  });
-
-  it("treats missing baseline as v0.0.0 and bumps accordingly", async () => {
-    const { client, created } = fakeClient({
-      latestRelease: null,
-      tags: [],
-      mergedPulls: [
-        {
-          number: 1,
-          title: "Break",
-          author: "a",
-          labels: ["breaking"],
-          url: "",
-          mergeCommitSha: "",
-        },
-      ],
-    });
-    await run(rt, { clientFactory: () => client });
-    expect(created[0]?.tagName).toBe("v1.0.0");
   });
 
   it("dry-run does not call createRelease", async () => {
@@ -323,4 +308,112 @@ describe("stateless publication input", () => {
     expect(rt.outputs["tag"]).toBe("v1.0.0");
     expect(rt.files).toEqual({});
   });
+});
+
+describe("automatic first-release ancestry", () => {
+  let dir: string;
+  let rt: FakeRuntime;
+  let root: string;
+  let merged: string;
+  let artifact: string;
+  let later: string;
+  let unrelated: string;
+  const git = (...args: string[]) =>
+    execFileSync("git", args, {
+      cwd: dir,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  const commit = (title: string) => {
+    git("commit", "--allow-empty", "-m", title);
+    return git("rev-parse", "HEAD");
+  };
+  const pr = (number: number, sha: string, label = "breaking"): PullRequestRef => ({
+    number,
+    title: `Change ${number}`,
+    author: "alice",
+    labels: [label],
+    url: "",
+    mergeCommitSha: sha,
+  });
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "label-release-ancestry-"));
+    git("init", "-b", "main");
+    git("config", "user.name", "Test");
+    git("config", "user.email", "test@example.invalid");
+    git("config", "commit.gpgsign", "false");
+    root = commit("Initial source");
+    git("checkout", "-b", "feature");
+    commit("Feature work without PR trailers");
+    git("checkout", "main");
+    git("merge", "--no-ff", "feature", "-m", "Custom merge message");
+    merged = git("rev-parse", "HEAD");
+    git("checkout", "-b", "artifacts");
+    artifact = commit("Generate release artifacts");
+    git("checkout", "main");
+    later = commit("Later squash merge");
+    git("checkout", "-b", "unrelated", root);
+    unrelated = commit("Other release line squash merge");
+    rt = baseRuntime();
+    rt.env["GITHUB_WORKSPACE"] = dir;
+    rt.inputs["target-commitish"] = artifact;
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it.each([undefined, "none"])("filters artifact ancestry with baseline %s", async (baseline) => {
+    if (baseline) rt.inputs["baseline-tag"] = baseline;
+    const { client, created } = fakeClient({
+      latestRelease: baseline ? { id: 1, tagName: "v9.0.0", targetCommitish: later } : null,
+      mergedPulls: [pr(3, later), pr(2, unrelated), pr(1, merged, "bug")],
+    });
+    await run(rt, { clientFactory: () => client });
+    expect(created).toHaveLength(1);
+    expect(created[0]?.tagName).toBe("v0.0.1");
+    expect(created[0]?.targetCommitish).toBe(artifact);
+    expect(rt.outputs["notes"]).toContain("Change 1");
+    expect(rt.outputs["notes"]).not.toContain("Change 2");
+    expect(rt.outputs["notes"]).not.toContain("Change 3");
+  });
+
+  it.each(["sha", "branch"])("includes a merge at the target (%s)", async (kind) => {
+    rt.inputs["target-commitish"] = kind === "sha" ? later : "main";
+    const { client, created } = fakeClient({ mergedPulls: [pr(3, later)] });
+    await run(rt, { clientFactory: () => client });
+    expect(created[0]?.tagName).toBe("v1.0.0");
+  });
+
+  it("skips when no PR merge is reachable", async () => {
+    const { client, created } = fakeClient({ mergedPulls: [pr(3, later), pr(2, unrelated)] });
+    await run(rt, { clientFactory: () => client });
+    expect(created).toHaveLength(0);
+    expect(rt.outputs["bump"]).toBe("none");
+    expect(rt.outputs["released"]).toBe("false");
+  });
+
+  it.each(["", "invalid"])("fails clearly for missing or invalid merge SHA %j", async (sha) => {
+    const { client, created } = fakeClient({ mergedPulls: [pr(1, merged), pr(2, sha)] });
+    await expect(run(rt, { clientFactory: () => client })).rejects.toThrow(
+      /PR #2: missing or invalid merge commit SHA/,
+    );
+    expect(created).toHaveLength(0);
+  });
+
+  it.each(["missing target", "missing history", "shallow", "no checkout"])(
+    "fails closed: %s",
+    async (failure) => {
+      if (failure === "missing target") rt.inputs["target-commitish"] = "not-a-commit";
+      if (failure === "missing history")
+        rmSync(join(dir, ".git", "objects", merged.slice(0, 2), merged.slice(2)));
+      if (failure === "shallow") {
+        git("clone", "--depth=1", "--branch=artifacts", `file://${dir}`, join(dir, "shallow"));
+        rt.env["GITHUB_WORKSPACE"] = join(dir, "shallow");
+      }
+      if (failure === "no checkout") rmSync(join(dir, ".git"), { recursive: true });
+      const { client, created } = fakeClient({ mergedPulls: [pr(1, merged)] });
+      await expect(run(rt, { clientFactory: () => client })).rejects.toThrow(
+        /Cannot establish first-release target ancestry.*fetch-depth: 0/,
+      );
+      expect(created).toHaveLength(0);
+    },
+  );
 });
