@@ -2,6 +2,7 @@
   "name": "label-release",
   "version": "0.1.0",
   "description": "Forgejo action that cuts a new release based on PR labels since the last release.",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "engines": {
