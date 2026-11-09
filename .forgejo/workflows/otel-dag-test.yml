@@ -34,7 +34,7 @@ jobs:
     steps:
       # checkout is a docker'd JS action — its stdout must bind to this
       # step's span (the SpanId fix), not the root workflow span.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v3.7.0 # v7.0.1
         with:
           persist-credentials: false
       - name: build
